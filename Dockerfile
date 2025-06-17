@@ -18,8 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY src/ ./src/
 
-# Create a simple static directory for now
-RUN mkdir -p static && echo '{"message": "Frontend will be served separately"}' > static/index.json
+# Copy the built React frontend
+COPY frontend/build/ ./static/
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser

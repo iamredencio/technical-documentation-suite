@@ -117,9 +117,9 @@ async def doc_writer_generate_async(agent, analysis_data, target_audience="devel
 def quality_reviewer_score_sync(agent, content, analysis_data):
     return agent._calculate_quality_score(content, analysis_data)
 
-@app.get("/")
-async def root():
-    """Root endpoint - API information"""
+@app.get("/api")
+async def api_info():
+    """API information endpoint"""
     return {
         "message": "Technical Documentation Suite API",
         "version": "1.0.0",
@@ -612,27 +612,26 @@ async def serve_frontend(path: str):
     static_directory = os.path.join(os.path.dirname(__file__), "static")
     index_file = os.path.join(static_directory, "index.html")
     
-    # Serve static files directly if they exist
+    # Don't intercept API routes
+    if path.startswith(("api/", "docs", "openapi.json", "health", "generate", "status", "feedback", "workflows", "agents", "debug")):
+        # Let FastAPI handle these normally - this shouldn't normally be reached due to route precedence
+        pass
+    
+    # Serve static files directly if they exist (CSS, JS, images, etc.)
     if path and os.path.exists(os.path.join(static_directory, path)):
         return FileResponse(os.path.join(static_directory, path))
     
-    # For all other routes, serve the React app's index.html
+    # For all other routes (including root), serve the React app's index.html
     if os.path.exists(index_file):
         return FileResponse(index_file)
     else:
-        # Frontend not built - provide helpful information
+        # Fallback if frontend files are not available
         return {
             "app": "Technical Documentation Suite",
             "version": "1.0.0",
-            "status": "backend_ready",
-            "note": "Backend API is running. Frontend will be deployed separately.",
-            "links": {
-                "api_docs": f"{request.base_url if 'request' in locals() else '/'}docs",
-                "health_check": f"{request.base_url if 'request' in locals() else '/'}health",
-                "generate_docs": f"{request.base_url if 'request' in locals() else '/'}generate",
-                "agents_status": f"{request.base_url if 'request' in locals() else '/'}agents/status"
-            },
-            "usage": "This is the API backend. Use the /docs endpoint to explore the API or access the frontend application separately."
+            "status": "frontend_missing",
+            "note": "React frontend build files not found. Please build the frontend first.",
+            "api_docs": "/docs"
         }
 
 if __name__ == "__main__":

@@ -1,0 +1,28 @@
+# Exclude common unwanted files but include frontend
+.git/
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+
+# Keep frontend build files
+!frontend/
+!frontend/**
+
+# Exclude tests and docs from build
+tests/
+docs/
+*.md
+!README.md
+
+# Exclude development files
+.env
+.env.*
+test_*.py
+test_*.sh
+
+# Exclude other unnecessary files
+deployment/
+terraform/
+scripts/
+.github/ 

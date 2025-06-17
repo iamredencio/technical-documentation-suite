@@ -17,7 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY main.py .
 COPY src/ ./src/
-COPY config/ ./config/ 2>/dev/null || true
 
 # Create a simple static directory for now
 RUN mkdir -p static && echo '{"message": "Frontend will be served separately"}' > static/index.json

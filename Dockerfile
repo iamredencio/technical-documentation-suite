@@ -1,3 +1,21 @@
+# Multi-stage build: First stage builds the React frontend
+FROM node:18-slim as frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy frontend source code
+COPY frontend/ ./
+
+# Build the React app
+RUN npm run build
+
+# Second stage: Python backend with built frontend
 FROM python:3.11-slim
 
 # Set working directory
@@ -18,8 +36,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY src/ ./src/
 
-# Copy the pre-built React frontend
-COPY frontend/build/ ./static/
+# Copy the built React frontend from the previous stage
+COPY --from=frontend-builder /app/frontend/build/ ./static/
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser
@@ -38,5 +56,5 @@ ENV PORT=8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the application
-CMD exec python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1 
+# Start the application
+CMD ["python", "main.py"] 

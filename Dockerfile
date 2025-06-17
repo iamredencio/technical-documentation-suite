@@ -1,3 +1,14 @@
+# Multi-stage build for optimized production image
+FROM node:18-slim as frontend-builder
+
+# Build frontend
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci --only=production
+COPY frontend/ ./
+RUN npm run build
+
+# Production Python image
 FROM python:3.11-slim
 
 # Set working directory
@@ -7,25 +18,37 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY . .
+COPY main.py .
+COPY src/ ./src/
+COPY config/ ./config/
 
-# Expose port
+# Copy built frontend from previous stage
+COPY --from=frontend-builder /app/frontend/build ./static/
+
+# Create non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expose port (Cloud Run will inject PORT env var)
 EXPOSE 8080
 
 # Set environment variables
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the application
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"] 
+CMD exec python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1 

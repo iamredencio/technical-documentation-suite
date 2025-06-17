@@ -26,6 +26,7 @@ from src.agents.orchestrator import (
     UserFeedbackAgent
 )
 from src.utils.git_utils import clone_repo
+from src.services.github_service import github_service
 
 app = FastAPI(
     title="Technical Documentation Suite",
@@ -60,6 +61,19 @@ class DocumentationRequest(BaseModel):
     output_formats: List[str] = ["markdown", "html"]
     include_diagrams: bool = True
     target_audience: str = "developers"
+    # GitHub authentication for private repos
+    github_token: Optional[str] = None
+    github_username: Optional[str] = None
+
+class GitHubAuthRequest(BaseModel):
+    code: str  # Authorization code from GitHub OAuth
+    state: Optional[str] = None
+
+class GitHubRepoRequest(BaseModel):
+    github_token: str
+    per_page: int = 30
+    page: int = 1
+    type: str = "all"  # all, owner, public, private, member
 
 class AgentStatus(BaseModel):
     agent_id: str
@@ -135,7 +149,11 @@ async def api_info():
             "health": "/health",
             "generate": "/generate",
             "status": "/status/{workflow_id}",
-            "feedback": "/feedback"
+            "feedback": "/feedback",
+            "github_auth": "/auth/github/config",
+            "github_token": "/auth/github/token",
+            "github_repos": "/github/repositories",
+            "github_validate": "/github/validate-repo"
         }
     }
 
@@ -335,7 +353,18 @@ async def generate_documentation(request: DocumentationRequest):
                 workflows[workflow_id].progress = 20
                 workflows[workflow_id].message = "Cloning repository"
                 print(f"🔍 Attempting to clone: {request.repository_url}")
-                repo_path = clone_repo(request.repository_url)
+                
+                # Check if GitHub authentication is provided for private repos
+                if request.github_token:
+                    print("🔐 Using GitHub authentication for private repository access")
+                    repo_path = clone_repo(
+                        request.repository_url, 
+                        github_token=request.github_token,
+                        github_username=request.github_username
+                    )
+                else:
+                    repo_path = clone_repo(request.repository_url)
+                    
                 print(f"✅ Repository cloned to: {repo_path}")
                 
                 # Update agent status
@@ -610,6 +639,126 @@ async def get_ai_status():
             "real_analysis_enabled": api_key_set
         }
     }
+
+@app.get("/auth/github/config")
+async def get_github_config():
+    """Get GitHub OAuth configuration for frontend"""
+    return {
+        "success": True,
+        "data": {
+            "client_id": github_service.client_id,
+            "oauth_configured": github_service.is_oauth_configured(),
+            "redirect_uri": f"{os.getenv('APP_URL', 'http://localhost:3000')}/auth/callback",
+            "scope": "repo,user:email"
+        }
+    }
+
+@app.post("/auth/github/token")
+async def exchange_github_token(request: GitHubAuthRequest):
+    """Exchange GitHub OAuth code for access token"""
+    try:
+        if not github_service.is_oauth_configured():
+            raise HTTPException(
+                status_code=503, 
+                detail="GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables."
+            )
+        
+        # Exchange code for token
+        token_response = github_service.exchange_code_for_token(request.code)
+        
+        if "access_token" not in token_response:
+            raise HTTPException(status_code=400, detail="Failed to get access token from GitHub")
+        
+        access_token = token_response["access_token"]
+        
+        # Get user info
+        user_info = github_service.get_user_info(access_token)
+        
+        return {
+            "success": True,
+            "data": {
+                "access_token": access_token,
+                "token_type": token_response.get("token_type", "bearer"),
+                "scope": token_response.get("scope", ""),
+                "user": {
+                    "id": user_info["id"],
+                    "login": user_info["login"],
+                    "name": user_info.get("name"),
+                    "email": user_info.get("email"),
+                    "avatar_url": user_info.get("avatar_url"),
+                    "public_repos": user_info.get("public_repos", 0),
+                    "private_repos": user_info.get("total_private_repos", 0)
+                }
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"GitHub authentication failed: {str(e)}")
+
+@app.post("/github/repositories")
+async def list_github_repositories(request: GitHubRepoRequest):
+    """List repositories for authenticated user"""
+    try:
+        repos = github_service.list_repositories(
+            token=request.github_token,
+            repo_type=request.type,
+            per_page=request.per_page,
+            page=request.page
+        )
+        
+        return {
+            "success": True,
+            "data": repos
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch repositories: {str(e)}")
+
+@app.post("/github/validate-repo")
+async def validate_github_repository(request: Dict[str, str]):
+    """Validate repository access for the user"""
+    try:
+        github_token = request.get("github_token")
+        repository_url = request.get("repository_url")
+        
+        if not github_token or not repository_url:
+            raise HTTPException(status_code=400, detail="github_token and repository_url are required")
+        
+        validation_result = github_service.validate_repository_access(github_token, repository_url)
+        
+        return {
+            "success": True,
+            "data": validation_result
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Repository validation failed: {str(e)}")
+
+@app.get("/github/user")
+async def get_github_user(token: str):
+    """Get GitHub user information"""
+    try:
+        user_info = github_service.get_user_info(token)
+        
+        return {
+            "success": True,
+            "data": {
+                "user": {
+                    "id": user_info["id"],
+                    "login": user_info["login"],
+                    "name": user_info.get("name"),
+                    "email": user_info.get("email"),
+                    "avatar_url": user_info.get("avatar_url"),
+                    "public_repos": user_info.get("public_repos", 0),
+                    "private_repos": user_info.get("total_private_repos", 0),
+                    "created_at": user_info.get("created_at"),
+                    "bio": user_info.get("bio")
+                }
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get user info: {str(e)}")
 
 # Catch-all route to serve React app for frontend routes  
 @app.get("/{path:path}")

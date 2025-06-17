@@ -605,7 +605,7 @@ async def get_ai_status():
         }
     }
 
-# Catch-all route to serve React app for frontend routes
+# Catch-all route to serve React app for frontend routes  
 @app.get("/{path:path}")
 async def serve_frontend(path: str):
     """Serve React frontend for all non-API routes"""
@@ -620,13 +620,19 @@ async def serve_frontend(path: str):
     if os.path.exists(index_file):
         return FileResponse(index_file)
     else:
-        # Fallback if static files are not available
+        # Frontend not built - provide helpful information
         return {
-            "message": "Technical Documentation Suite API",
-            "status": "frontend_not_built",
-            "note": "This appears to be an API-only deployment. Visit /docs for API documentation.",
-            "api_docs": "/docs",
-            "health": "/health"
+            "app": "Technical Documentation Suite",
+            "version": "1.0.0",
+            "status": "backend_ready",
+            "note": "Backend API is running. Frontend will be deployed separately.",
+            "links": {
+                "api_docs": f"{request.base_url if 'request' in locals() else '/'}docs",
+                "health_check": f"{request.base_url if 'request' in locals() else '/'}health",
+                "generate_docs": f"{request.base_url if 'request' in locals() else '/'}generate",
+                "agents_status": f"{request.base_url if 'request' in locals() else '/'}agents/status"
+            },
+            "usage": "This is the API backend. Use the /docs endpoint to explore the API or access the frontend application separately."
         }
 
 if __name__ == "__main__":

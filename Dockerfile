@@ -1,14 +1,3 @@
-# Multi-stage build for optimized production image
-FROM node:18-slim as frontend-builder
-
-# Build frontend
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci --only=production
-COPY frontend/ ./
-RUN npm run build
-
-# Production Python image
 FROM python:3.11-slim
 
 # Set working directory
@@ -28,10 +17,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY main.py .
 COPY src/ ./src/
-COPY config/ ./config/
+COPY config/ ./config/ 2>/dev/null || true
 
-# Copy built frontend from previous stage
-COPY --from=frontend-builder /app/frontend/build ./static/
+# Create a simple static directory for now
+RUN mkdir -p static && echo '{"message": "Frontend will be served separately"}' > static/index.json
 
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser appuser

@@ -36,16 +36,10 @@ steps:
       '--min-instances', '0',
       '--concurrency', '4',
       '--timeout', '900s',
-      '--set-env-vars', 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,STORAGE_BUCKET=$PROJECT_ID-doc-suite-artifacts,BIGQUERY_DATASET=documentation_analytics,ENVIRONMENT=production,LOG_LEVEL=INFO',
-      '--set-secrets', 'GEMINI_API_KEY=gemini-api-key:latest',
-      '--service-account', 'tech-doc-suite-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      '--set-env-vars', 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,STORAGE_BUCKET=$PROJECT_ID-doc-suite-artifacts,BIGQUERY_DATASET=documentation_analytics,ENVIRONMENT=production,LOG_LEVEL=INFO'
     ]
 
-# Grant Cloud Build service account permissions to access secrets
-availableSecrets:
-  secretManager:
-  - versionName: projects/$PROJECT_ID/secrets/gemini-api-key/versions/latest
-    env: 'GEMINI_API_KEY'
+# Secrets will be configured after initial deployment
 
 # Specify the images to be pushed to Container Registry
 images:
@@ -60,7 +54,4 @@ options:
 # Timeout for the entire build
 timeout: '1200s'
 
-# Substitutions (can be overridden)
-substitutions:
-  _REGION: 'us-central1'
-  _SERVICE_NAME: 'technical-documentation-suite' 
+# Note: Region and service name are hardcoded in the deployment step 

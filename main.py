@@ -5,6 +5,8 @@ Built for the Google Cloud ADK Hackathon
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import uvicorn
@@ -39,6 +41,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount static files for React frontend
+static_directory = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_directory):
+    app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
 # Pydantic models
 class DocumentationRequest(BaseModel):
@@ -597,6 +604,30 @@ async def get_ai_status():
             "real_analysis_enabled": api_key_set
         }
     }
+
+# Catch-all route to serve React app for frontend routes
+@app.get("/{path:path}")
+async def serve_frontend(path: str):
+    """Serve React frontend for all non-API routes"""
+    static_directory = os.path.join(os.path.dirname(__file__), "static")
+    index_file = os.path.join(static_directory, "index.html")
+    
+    # Serve static files directly if they exist
+    if path and os.path.exists(os.path.join(static_directory, path)):
+        return FileResponse(os.path.join(static_directory, path))
+    
+    # For all other routes, serve the React app's index.html
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    else:
+        # Fallback if static files are not available
+        return {
+            "message": "Technical Documentation Suite API",
+            "status": "frontend_not_built",
+            "note": "This appears to be an API-only deployment. Visit /docs for API documentation.",
+            "api_docs": "/docs",
+            "health": "/health"
+        }
 
 if __name__ == "__main__":
     # Get port from environment variable (for Cloud Run)

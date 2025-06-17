@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Development: Frontend and Backend separate
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+    profiles:
+      - dev
+
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app
+    profiles:
+      - dev
+
+  # Production: Single container with built frontend
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8080
+    profiles:
+      - prod
+
+  # Build service: Just for building the frontend
+  frontend-builder:
+    build:
+      context: ./frontend
+    volumes:
+      - ./frontend/build:/app/build
+    command: npm run build
+    profiles:
+      - build 

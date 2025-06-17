@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY src/ ./src/
 
-# Copy the built React frontend
+# Copy the pre-built React frontend
 COPY frontend/build/ ./static/
 
 # Create non-root user for security

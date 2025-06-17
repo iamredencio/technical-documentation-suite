@@ -45,7 +45,13 @@ app.add_middleware(
 # Mount static files for React frontend
 static_directory = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_directory):
-    app.mount("/static", StaticFiles(directory=static_directory), name="static")
+    # Mount the React build's static directory to serve CSS, JS, and other assets
+    react_static_dir = os.path.join(static_directory, "static")
+    if os.path.exists(react_static_dir):
+        app.mount("/static", StaticFiles(directory=react_static_dir), name="static")
+    else:
+        # Fallback to the main static directory if nested structure doesn't exist
+        app.mount("/static", StaticFiles(directory=static_directory), name="static")
 
 # Pydantic models
 class DocumentationRequest(BaseModel):
@@ -612,14 +618,10 @@ async def serve_frontend(path: str):
     static_directory = os.path.join(os.path.dirname(__file__), "static")
     index_file = os.path.join(static_directory, "index.html")
     
-    # Don't intercept API routes
-    if path.startswith(("api/", "docs", "openapi.json", "health", "generate", "status", "feedback", "workflows", "agents", "debug")):
+    # Don't intercept API routes or static file routes
+    if path.startswith(("api/", "docs", "openapi.json", "health", "generate", "status", "feedback", "workflows", "agents", "debug", "static/")):
         # Let FastAPI handle these normally - this shouldn't normally be reached due to route precedence
-        pass
-    
-    # Serve static files directly if they exist (CSS, JS, images, etc.)
-    if path and os.path.exists(os.path.join(static_directory, path)):
-        return FileResponse(os.path.join(static_directory, path))
+        raise HTTPException(status_code=404, detail="Not found")
     
     # For all other routes (including root), serve the React app's index.html
     if os.path.exists(index_file):

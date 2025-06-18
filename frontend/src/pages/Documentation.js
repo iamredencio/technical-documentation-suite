@@ -1,10 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import mermaid from 'mermaid';
 import { 
@@ -17,8 +15,7 @@ import {
   RefreshCw,
   CheckCircle,
   XCircle,
-  Languages,
-  Globe
+  Languages
 } from 'lucide-react';
 import { apiService } from '../config/api';
 
@@ -30,20 +27,7 @@ const Documentation = () => {
   const [qualityMetrics, setQualityMetrics] = useState(null);
   const [selectedTranslation, setSelectedTranslation] = useState(null);
 
-  useEffect(() => {
-    fetchDocumentation();
-    // Initialize Mermaid
-    mermaid.initialize({ startOnLoad: true, theme: 'default' });
-  }, [workflowId]);
-
-  useEffect(() => {
-    // Re-render Mermaid diagrams when content changes
-    if (documentation && activeTab === 'diagrams') {
-      mermaid.init();
-    }
-  }, [documentation, activeTab]);
-
-  const fetchDocumentation = async () => {
+  const fetchDocumentation = useCallback(async () => {
     try {
       // Fetch the actual workflow status and results from the backend
       const response = await apiService.getWorkflowStatus(workflowId);
@@ -151,7 +135,20 @@ The system uses a multi-agent approach with specialized agents for different tas
     } finally {
       setLoading(false);
     }
-  };
+  }, [workflowId]);
+
+  useEffect(() => {
+    fetchDocumentation();
+    // Initialize Mermaid
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+  }, [fetchDocumentation]);
+
+  useEffect(() => {
+    // Re-render Mermaid diagrams when content changes
+    if (documentation && activeTab === 'diagrams') {
+      mermaid.init();
+    }
+  }, [documentation, activeTab]);
 
   const downloadDocumentation = (format = 'markdown') => {
     if (!documentation) return;

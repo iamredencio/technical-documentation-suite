@@ -254,7 +254,7 @@ const Generate = () => {
       setIsGenerating(false);
       updateActiveAgent(-1);
     };
-  }, []);
+  }, [updateActiveAgent]);
 
   // Load supported languages on component mount
   useEffect(() => {

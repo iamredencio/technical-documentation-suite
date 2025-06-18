@@ -1,17 +1,16 @@
 import React from 'react';
 import { 
-  Trophy, 
-  Users, 
-  Code, 
-  Zap, 
-  Cloud, 
-  Brain,
-  Target,
-  Rocket,
   Award,
   Github,
-  Linkedin,
-  Mail
+  Mail,
+  Users,
+  Zap,
+  Code,
+  Brain,
+  Cloud,
+  Target,
+  Trophy,
+  Rocket
 } from 'lucide-react';
 
 const About = () => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { apiService } from '../config/api';
@@ -32,7 +32,7 @@ const Status = () => {
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [currentAgentIndex, setCurrentAgentIndex] = useState(0);
 
-  const agents = [
+  const agents = useMemo(() => [
     {
       icon: GitBranch,
       name: 'Code Analyzer',
@@ -75,7 +75,21 @@ const Status = () => {
       description: 'Collecting and processing user feedback',
       color: 'from-pink-500 to-pink-600',
     },
-  ];
+  ], []);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const response = await apiService.getWorkflowStatus(workflowId);
+      if (response.data.success) {
+        setStatus(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching status:', error);
+      toast.error('Failed to fetch status');
+    } finally {
+      setLoading(false);
+    }
+  }, [workflowId]);
 
   useEffect(() => {
     let interval;
@@ -91,12 +105,12 @@ const Status = () => {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [status?.status, workflowId]);
+  }, [fetchStatus, status?.status, workflowId]);
 
   // Initial fetch when component mounts
   useEffect(() => {
     fetchStatus();
-  }, [workflowId]);
+  }, [fetchStatus]);
 
   // Update agent status based on real backend data
   useEffect(() => {
@@ -126,21 +140,7 @@ const Status = () => {
         }
       }
     }
-  }, [status?.status, status?.current_agent, status?.agents]);
-
-  const fetchStatus = async () => {
-    try {
-      const response = await apiService.getWorkflowStatus(workflowId);
-      if (response.data.success) {
-        setStatus(response.data.data);
-      }
-    } catch (error) {
-      console.error('Error fetching status:', error);
-      toast.error('Failed to fetch status');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [status?.status, status?.current_agent, status?.agents, agents]);
 
   const submitFeedback = async () => {
     try {

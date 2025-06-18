@@ -8,7 +8,6 @@ import {
   Loader, 
   TestTube,
   Server,
-  Database,
   Bot,
   GitBranch,
   Eye,
@@ -108,18 +107,6 @@ const TestPages = () => {
       color: 'from-red-500 to-red-600'
     }
   ];
-
-  const fetchRealAgentStatus = async () => {
-    try {
-      const response = await apiService.getAgentsStatus();
-      if (response.data.success) {
-        return response.data.data.agents;
-      }
-    } catch (error) {
-      console.error('Error fetching agent status:', error);
-    }
-    return null;
-  };
 
   const startRealAgentDemo = async () => {
     setIsAgentSimulationRunning(true);
@@ -261,7 +248,7 @@ const TestPages = () => {
   const runAgentStatusCheck = async () => {
     // Check agent status via the dedicated API endpoint
     await apiService.healthCheck(); // Verify connectivity
-    const agentResponse = await apiService.getAgentsStatus();
+    await apiService.getAgentsStatus(); // Just verify the endpoint works
     
     const agentStatuses = [
       { name: 'Code Analyzer', status: 'healthy' },

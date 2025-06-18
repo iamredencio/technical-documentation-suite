@@ -51,7 +51,8 @@ export const endpoints = {
   agentsStatus: '/agents/status',
   workflows: '/workflows',
   translationLanguages: '/translation/languages',
-  translate: '/translation/translate'
+  translate: '/translation/translate',
+  stopWorkflow: '/stop-workflow'
 };
 
 // API functions
@@ -76,7 +77,10 @@ export const apiService = {
   
   // Translation services
   getSupportedLanguages: () => api.get(endpoints.translationLanguages),
-  translateDocumentation: (data) => api.post(endpoints.translate, data)
+  translateDocumentation: (data) => api.post(endpoints.translate, data),
+  
+  // Stop workflow
+  stopWorkflow: (workflowId) => api.post(endpoints.stopWorkflow, { workflow_id: workflowId })
 };
 
 export default api; 

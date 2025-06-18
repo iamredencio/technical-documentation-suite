@@ -159,6 +159,19 @@ const Status = () => {
     }
   };
 
+  const stopWorkflow = async () => {
+    try {
+      const response = await apiService.stopWorkflow(workflowId);
+      if (response.data.success) {
+        toast.success('Workflow stopped successfully');
+        fetchStatus(); // Refresh status
+      }
+    } catch (error) {
+      console.error('Error stopping workflow:', error);
+      toast.error('Failed to stop workflow');
+    }
+  };
+
   const getStatusInfo = (status) => {
     switch (status) {
       case 'initiated':
@@ -322,10 +335,19 @@ const Status = () => {
       {/* Agent Workflow Visualization */}
       {status.status === 'processing' && (
         <div className="bg-white rounded-2xl shadow-lg p-8">
-          <h3 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
-            <RefreshCw className="h-5 w-5 text-blue-600 mr-2 animate-spin" />
-            Agent Workflow in Progress
-          </h3>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+              <RefreshCw className="h-5 w-5 text-blue-600 mr-2 animate-spin" />
+              Agent Workflow in Progress
+            </h3>
+            <button
+              onClick={stopWorkflow}
+              className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+            >
+              <XCircle className="h-4 w-4" />
+              <span>Stop Workflow</span>
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {agents.map((agent, index) => {
               // Check both currentAgentIndex and direct backend status for more reliable detection

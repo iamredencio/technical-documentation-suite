@@ -309,7 +309,7 @@ const About = () => {
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <a
-            href="https://github.com"
+            href="https://github.com/iamredencio/technical-documentation-suite"
             target="_blank"
             rel="noopener noreferrer"
             className="bg-white text-blue-600 hover:bg-gray-100 font-semibold py-3 px-6 rounded-lg inline-flex items-center space-x-2 transition-colors"

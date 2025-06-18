@@ -200,4 +200,61 @@
 
 .toast-info {
   @apply bg-blue-500 text-white;
+}
+
+/* Text overflow and wrapping utilities */
+.text-wrap {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.text-ellipsis {
+  @apply truncate;
+}
+
+.prose-custom {
+  max-width: none;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.prose-custom pre {
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.prose-custom code {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Container utilities for better responsive layout */
+.container-responsive {
+  @apply w-full max-w-full px-4 mx-auto;
+}
+
+@media (min-width: 640px) {
+  .container-responsive {
+    @apply max-w-screen-sm px-6;
+  }
+}
+
+@media (min-width: 768px) {
+  .container-responsive {
+    @apply max-w-screen-md px-8;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container-responsive {
+    @apply max-w-screen-lg px-10;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container-responsive {
+    @apply max-w-screen-xl px-12;
+  }
 } 

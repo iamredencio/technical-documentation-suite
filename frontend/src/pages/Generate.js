@@ -19,7 +19,8 @@ import {
   CheckCircle,
   Clock,
   RefreshCw,
-  Languages
+  Languages,
+  XCircle
 } from 'lucide-react';
 
 const Generate = () => {
@@ -325,6 +326,18 @@ const Generate = () => {
     }
   ];
 
+  const stopWorkflow = async () => {
+    try {
+      await apiService.stopWorkflow(currentWorkflowId);
+      toast.success('Workflow stopped successfully');
+      setIsGenerating(false);
+      updateActiveAgent(-1);
+    } catch (error) {
+      console.error('Error stopping workflow:', error);
+      toast.error('Failed to stop workflow');
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
@@ -617,29 +630,40 @@ const Generate = () => {
         {/* Current Processing Status */}
         {isGenerating && activeAgent >= 0 && (
           <div className="mt-8 p-6 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
-            <div className="flex items-center space-x-3">
-              <div className={`bg-gradient-to-r ${agents[activeAgent].color} p-3 rounded-lg animate-bounce`}>
-                {React.createElement(agents[activeAgent].icon, { className: "h-6 w-6 text-white" })}
-              </div>
-              <div>
-                <h4 className="font-semibold text-gray-900 text-lg">
-                  Currently Processing: {agents[activeAgent].name}
-                </h4>
-                <p className="text-sm text-gray-600">
-                  {agents[activeAgent].description}
-                </p>
-                {currentWorkflowId && (
-                  <p className="text-xs text-blue-600 mt-1 font-medium">
-                    Workflow ID: {currentWorkflowId}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className={`bg-gradient-to-r ${agents[activeAgent].color} p-3 rounded-lg animate-bounce`}>
+                  {React.createElement(agents[activeAgent].icon, { className: "h-6 w-6 text-white" })}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-gray-900 text-lg">
+                    Currently Processing: {agents[activeAgent].name}
+                  </h4>
+                  <p className="text-sm text-gray-600">
+                    {agents[activeAgent].description}
                   </p>
-                )}
+                  {currentWorkflowId && (
+                    <p className="text-xs text-blue-600 mt-1 font-medium">
+                      Workflow ID: {currentWorkflowId}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div className="ml-auto">
+              <div className="flex items-center space-x-4">
                 <div className="flex space-x-1">
                   <div className="w-2 h-2 bg-yellow-400 rounded-full animate-ping"></div>
                   <div className="w-2 h-2 bg-yellow-400 rounded-full animate-ping" style={{animationDelay: '0.2s'}}></div>
                   <div className="w-2 h-2 bg-yellow-400 rounded-full animate-ping" style={{animationDelay: '0.4s'}}></div>
                 </div>
+                {currentWorkflowId && (
+                  <button
+                    onClick={stopWorkflow}
+                    className="bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 flex items-center space-x-2"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    <span>Stop</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

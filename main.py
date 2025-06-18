@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -20,6 +20,9 @@ from datetime import datetime
 import shutil
 import logging
 from pathlib import Path
+import subprocess
+import tempfile
+import asyncio
 
 # Import our agent modules
 from src.agents.base_agent import BaseAgent, Message
@@ -80,6 +83,7 @@ class DocumentationRequest(BaseModel):
     output_formats: List[str] = ["markdown", "html"]
     include_diagrams: bool = True
     target_audience: str = "developers"
+    translation_languages: List[str] = []  # Selected languages for translation
     # GitHub authentication for private repos
     github_token: Optional[str] = None
     github_username: Optional[str] = None
@@ -129,6 +133,9 @@ class TranslationRequest(BaseModel):
     selected_languages: List[str]
     project_context: Optional[Dict[str, Any]] = None
 
+class StopWorkflowRequest(BaseModel):
+    workflow_id: str
+
 # In-memory storage for demo (in production, this would be in a database)
 workflows: Dict[str, WorkflowStatus] = {}
 agent_execution_queue: Dict[str, List[str]] = {}  # workflow_id -> list of agent names
@@ -155,10 +162,30 @@ async def doc_writer_generate_async(agent, analysis_data, target_audience="devel
 def quality_reviewer_score_sync(agent, content, analysis_data):
     """Calculate quality score synchronously"""
     try:
-        return agent._calculate_quality_score(content, analysis_data)
+        overall_score = agent._calculate_quality_score(content, analysis_data)
+        detailed_metrics = agent._analyze_detailed_metrics(content, analysis_data)
+        suggestions = agent._generate_improvement_suggestions(content, detailed_metrics)
+        
+        return {
+            "overall_score": overall_score * 100,  # Convert to 0-100 scale
+            "completeness": detailed_metrics.get("completeness", 0) * 100,
+            "technical_accuracy": detailed_metrics.get("accuracy", 0) * 100,
+            "clarity": detailed_metrics.get("readability", 0) * 100,
+            "consistency": detailed_metrics.get("consistency", 0) * 100,
+            "feedback": "; ".join(suggestions[:3]) if suggestions else "Good documentation quality",
+            "suggestions": suggestions
+        }
     except Exception as e:
         logger.error(f"Quality review failed: {e}")
-        return 0.0
+        return {
+            "overall_score": 0,
+            "completeness": 0,
+            "technical_accuracy": 0,
+            "clarity": 0,
+            "consistency": 0,
+            "feedback": "Quality review failed",
+            "suggestions": []
+        }
 
 @app.get("/api")
 async def api_info():
@@ -356,6 +383,7 @@ async def generate_documentation(request: DocumentationRequest):
     
     # Check if we should use real AI analysis
     use_real_analysis = os.getenv('GEMINI_API_KEY') is not None
+    # use_real_analysis = False  # Temporarily disabled for testing
     
     try:
         # Initialize workflow agents
@@ -373,10 +401,13 @@ async def generate_documentation(request: DocumentationRequest):
         if use_real_analysis:
             logger.info("Starting AI-powered documentation generation")
             
-            # Repository cloning with proper error handling
+            # Clone repository with timeout
             try:
                 repo_path = f"/tmp/repo_{workflow_id}"
-                clone_cmd = f"git clone {request.repository_url} {repo_path}"
+                if os.path.exists(repo_path):
+                    shutil.rmtree(repo_path)
+                
+                clone_cmd = ["git", "clone", "--depth", "1", request.repository_url, repo_path]
                 
                 if request.github_token and request.github_username:
                     logger.info("Using GitHub authentication for private repository access")
@@ -385,17 +416,35 @@ async def generate_documentation(request: DocumentationRequest):
                         "https://github.com/", 
                         f"https://{request.github_username}:{request.github_token}@github.com/"
                     )
-                    clone_cmd = f"git clone {auth_url} {repo_path}"
+                    clone_cmd = ["git", "clone", "--depth", "1", auth_url, repo_path]
                 
-                exit_code = os.system(clone_cmd)
-                if exit_code != 0:
-                    raise Exception(f"Failed to clone repository: {request.repository_url}")
+                # Use subprocess with timeout to prevent hanging
+                logger.info(f"Cloning repository: {request.repository_url}")
+                result = subprocess.run(
+                    clone_cmd, 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=60,  # Increased timeout to 60 seconds
+                    env={**os.environ, 'GIT_TERMINAL_PROMPT': '0'}  # Disable interactive prompts
+                )
+                
+                if result.returncode != 0:
+                    raise Exception(f"Git clone failed: {result.stderr}")
                     
-                logger.info(f"Repository cloned successfully")
+                logger.info(f"Repository cloned successfully to {repo_path}")
                 
+            except subprocess.TimeoutExpired:
+                logger.error("Repository cloning timed out after 60 seconds")
+                # Fall back to demo mode instead of failing
+                logger.info("Falling back to demo mode due to clone timeout")
+                use_real_analysis = False
+                repo_path = None
             except Exception as e:
                 logger.error(f"Repository cloning failed: {e}")
-                raise HTTPException(status_code=400, detail=f"Failed to clone repository: {str(e)}")
+                # Fall back to demo mode instead of failing  
+                logger.info("Falling back to demo mode due to clone failure")
+                use_real_analysis = False
+                repo_path = None
 
             try:
                 # Update workflow status for AI processing
@@ -403,165 +452,193 @@ async def generate_documentation(request: DocumentationRequest):
                 workflows[workflow_id].progress = 20
                 workflows[workflow_id].message = "Analyzing repository structure"
                 
-                # Start with code analyzer
-                workflows[workflow_id].current_agent = "code_analyzer"
-                if "code_analyzer" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["code_analyzer"].status = "active"
-                    workflows[workflow_id].agents["code_analyzer"].started_at = datetime.now()
-                    workflows[workflow_id].agents["code_analyzer"].current_task = "Analyzing repository"
+                # If we fell back to demo mode, update the ai_powered flag
+                workflows[workflow_id].ai_powered = use_real_analysis
                 
-                logger.info("🔄 Current Agent: code_analyzer (1/7) - Repository Analysis")
-                
-                code_analysis = agents["code_analyzer"].analyze_repository(repo_path)
-                
-                # Add request metadata to analysis data for documentation generation
-                code_analysis["repository_url"] = request.repository_url
-                code_analysis["project_id"] = request.project_id
-                
-                logger.info(f"Code analysis complete: {len(code_analysis.get('functions', []))} functions, {len(code_analysis.get('classes', []))} classes")
+                if use_real_analysis and repo_path:
+                    # Real AI workflow
+                    # Start with code analyzer
+                    workflows[workflow_id].current_agent = "code_analyzer"
+                    if "code_analyzer" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["code_analyzer"].status = "active"
+                        workflows[workflow_id].agents["code_analyzer"].started_at = datetime.now()
+                        workflows[workflow_id].agents["code_analyzer"].current_task = "Analyzing repository"
+                    
+                    logger.info("🔄 Current Agent: code_analyzer (1/7) - Repository Analysis")
+                    
+                    code_analysis = agents["code_analyzer"].analyze_repository(repo_path)
+                    
+                    # Add request metadata to analysis data for documentation generation
+                    code_analysis["repository_url"] = request.repository_url
+                    code_analysis["project_id"] = request.project_id
+                    
+                    logger.info(f"Code analysis complete: {len(code_analysis.get('functions', []))} functions, {len(code_analysis.get('classes', []))} classes")
 
-                # Update workflow status
-                if "code_analyzer" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["code_analyzer"].status = "completed"
-                    workflows[workflow_id].agents["code_analyzer"].progress = 100
-                    workflows[workflow_id].agents["code_analyzer"].completed_at = datetime.now()
+                    # Continue with the rest of the AI workflow...
+                    # [Rest of AI workflow code remains the same]
+                    
+                    # Update workflow status
+                    if "code_analyzer" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["code_analyzer"].status = "completed"
+                        workflows[workflow_id].agents["code_analyzer"].progress = 100
+                        workflows[workflow_id].agents["code_analyzer"].completed_at = datetime.now()
 
-                workflows[workflow_id].current_agent = "doc_writer"
-                if "doc_writer" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["doc_writer"].status = "active"
-                    workflows[workflow_id].agents["doc_writer"].started_at = datetime.now()
-                    workflows[workflow_id].agents["doc_writer"].current_task = "Generating documentation"
-                
-                logger.info("🔄 Current Agent: doc_writer (2/7) - Documentation Generation")
+                    workflows[workflow_id].current_agent = "doc_writer"
+                    if "doc_writer" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["doc_writer"].status = "active"
+                        workflows[workflow_id].agents["doc_writer"].started_at = datetime.now()
+                        workflows[workflow_id].agents["doc_writer"].current_task = "Generating documentation"
+                    
+                    logger.info("🔄 Current Agent: doc_writer (2/7) - Documentation Generation")
 
-                # Documentation generation
-                workflows[workflow_id].progress = 60
-                workflows[workflow_id].message = "Generating comprehensive documentation using AI"
-                logger.info("Starting AI documentation generation")
-                
-                documentation = await doc_writer_generate_async(
-                    agents["doc_writer"], 
-                    code_analysis, 
-                    request.target_audience
-                )
-                
-                logger.info(f"Documentation generated: {len(documentation)} characters")
+                    # Documentation generation
+                    workflows[workflow_id].progress = 60
+                    workflows[workflow_id].message = "Generating comprehensive documentation using AI"
+                    logger.info("Starting AI documentation generation")
+                    
+                    documentation = await doc_writer_generate_async(
+                        agents["doc_writer"], 
+                        code_analysis, 
+                        request.target_audience
+                    )
+                    
+                    logger.info(f"Documentation generated: {len(documentation)} characters")
 
-                # Complete doc writer, start diagram generator
-                if "doc_writer" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["doc_writer"].status = "completed"
-                    workflows[workflow_id].agents["doc_writer"].progress = 100
-                    workflows[workflow_id].agents["doc_writer"].completed_at = datetime.now()
+                    # Complete doc writer, start diagram generator
+                    if "doc_writer" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["doc_writer"].status = "completed"
+                        workflows[workflow_id].agents["doc_writer"].progress = 100
+                        workflows[workflow_id].agents["doc_writer"].completed_at = datetime.now()
 
-                workflows[workflow_id].current_agent = "diagram_generator"
-                if "diagram_generator" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["diagram_generator"].status = "active"
-                    workflows[workflow_id].agents["diagram_generator"].started_at = datetime.now()
-                    workflows[workflow_id].agents["diagram_generator"].current_task = "Creating diagrams"
+                    workflows[workflow_id].current_agent = "diagram_generator"
+                    if "diagram_generator" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["diagram_generator"].status = "active"
+                        workflows[workflow_id].agents["diagram_generator"].started_at = datetime.now()
+                        workflows[workflow_id].agents["diagram_generator"].current_task = "Creating diagrams"
+                    
+                    logger.info("🔄 Current Agent: diagram_generator (3/7) - Diagram Creation")
                 
-                logger.info("🔄 Current Agent: diagram_generator (3/7) - Diagram Creation")
-            
-                # Generate diagrams
-                workflows[workflow_id].progress = 80
-                workflows[workflow_id].message = "Creating architectural diagrams"
-                logger.info("Generating diagrams")
-                
-                diagrams = agents["diagram_generator"]._generate_architecture_diagram(code_analysis)
-                logger.info("Diagrams generated successfully")
-                
-                # Complete diagram generator, start translation agent
-                if "diagram_generator" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["diagram_generator"].status = "completed"
-                    workflows[workflow_id].agents["diagram_generator"].progress = 100
-                    workflows[workflow_id].agents["diagram_generator"].completed_at = datetime.now()
+                    # Generate diagrams
+                    workflows[workflow_id].progress = 80
+                    workflows[workflow_id].message = "Creating architectural diagrams"
+                    logger.info("Generating diagrams")
+                    
+                    diagrams = agents["diagram_generator"]._generate_architecture_diagram(code_analysis)
+                    logger.info("Diagrams generated successfully")
+                    
+                    # Complete diagram generator, start translation agent
+                    if "diagram_generator" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["diagram_generator"].status = "completed"
+                        workflows[workflow_id].agents["diagram_generator"].progress = 100
+                        workflows[workflow_id].agents["diagram_generator"].completed_at = datetime.now()
 
-                workflows[workflow_id].current_agent = "translation_agent"
-                if "translation_agent" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["translation_agent"].status = "active"
-                    workflows[workflow_id].agents["translation_agent"].started_at = datetime.now()
-                    workflows[workflow_id].agents["translation_agent"].current_task = "Generating translations"
+                    workflows[workflow_id].current_agent = "translation_agent"
+                    if "translation_agent" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["translation_agent"].status = "active"
+                        workflows[workflow_id].agents["translation_agent"].started_at = datetime.now()
+                        workflows[workflow_id].agents["translation_agent"].current_task = "Generating translations"
 
-                logger.info("🔄 Current Agent: translation_agent (4/7) - Translation")
+                    logger.info("🔄 Current Agent: translation_agent (4/7) - Translation")
 
-                # Generate translations
-                workflows[workflow_id].progress = 85
-                workflows[workflow_id].message = "Generating translations"
-                logger.info("Generating translations")
-                
-                translations = {}
-                translation_agent = agents["translation_agent"]
-                supported_languages = list(translation_agent.supported_languages.keys())
-                
-                for lang_key in supported_languages:
-                    try:
-                        translated_content = await translation_agent._perform_translation(
-                            documentation, 
-                            translation_agent.supported_languages[lang_key], 
-                            code_analysis
-                        )
-                        translations[lang_key] = {
-                            "content": translated_content,
-                            "language": translation_agent.supported_languages[lang_key]
+                    # Translation to selected languages only
+                    supported_languages = list(translation_agent.supported_languages.keys())
+                    translations = {}
+                    
+                    # Only translate to languages selected by user in the form
+                    selected_languages = request.translation_languages if request.translation_languages else []
+                    
+                    if selected_languages:
+                        logger.info(f"Translating to selected languages: {selected_languages}")
+                        for lang_key in selected_languages:
+                            if lang_key in translation_agent.supported_languages:
+                                try:
+                                    translated_content = await translation_agent._perform_translation(
+                                        documentation, 
+                                        translation_agent.supported_languages[lang_key], 
+                                        code_analysis
+                                    )
+                                    translations[lang_key] = {
+                                        "content": translated_content,
+                                        "language": translation_agent.supported_languages[lang_key]
+                                    }
+                                except Exception as e:
+                                    logger.warning(f"Translation to {lang_key} failed: {e}")
+                                    translations[lang_key] = {
+                                        "content": f"Translation to {translation_agent.supported_languages[lang_key]['name']} failed. Original content:\n\n{documentation}",
+                                        "language": translation_agent.supported_languages[lang_key]
+                                    }
+                            else:
+                                logger.warning(f"Unsupported language selected: {lang_key}")
+                    else:
+                        logger.info("No translation languages selected, skipping translation")
+                    
+                    logger.info(f"Translations generated for {len(translations)} selected languages")
+
+                    # Complete translation agent, start quality reviewer  
+                    if "translation_agent" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["translation_agent"].status = "completed"
+                        workflows[workflow_id].agents["translation_agent"].progress = 100
+                        workflows[workflow_id].agents["translation_agent"].completed_at = datetime.now()
+
+                    workflows[workflow_id].current_agent = "quality_reviewer"
+                    if "quality_reviewer" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["quality_reviewer"].status = "active"
+                        workflows[workflow_id].agents["quality_reviewer"].started_at = datetime.now()
+                        workflows[workflow_id].agents["quality_reviewer"].current_task = "Reviewing quality"
+
+                    logger.info("🔄 Current Agent: quality_reviewer (5/7) - Quality Review")
+
+                    # Quality review
+                    workflows[workflow_id].progress = 95
+                    workflows[workflow_id].message = "Reviewing documentation quality"
+                    logger.info("Starting quality review")
+                    
+                    quality = quality_reviewer_score_sync(agents["quality_reviewer"], documentation, code_analysis)
+                    logger.info(f"Quality review complete: {quality}")
+
+                    # Complete quality reviewer
+                    if "quality_reviewer" in workflows[workflow_id].agents:
+                        workflows[workflow_id].agents["quality_reviewer"].status = "completed"
+                        workflows[workflow_id].agents["quality_reviewer"].progress = 100
+                        workflows[workflow_id].agents["quality_reviewer"].completed_at = datetime.now()
+
+                    # Cleanup
+                    if repo_path and os.path.exists(repo_path):
+                        shutil.rmtree(repo_path)
+                    logger.info("Repository cleanup completed")
+
+                    # Store real results
+                    workflows[workflow_id].status = "completed"
+                    workflows[workflow_id].progress = 100
+                    workflows[workflow_id].message = "AI-powered documentation generation completed successfully"
+                    workflows[workflow_id].completed_at = datetime.now()
+                    workflows[workflow_id].current_agent = None
+                    workflows[workflow_id].result = {
+                        "documentation": documentation,
+                        "translations": translations,
+                        "diagrams": diagrams,
+                        "quality": quality,
+                        "analysis": code_analysis,
+                        "ai_generated": True
+                    }
+
+                    logger.info("Real AI workflow completed successfully")
+                else:
+                    # Fall back to demo mode
+                    logger.info("Starting demo mode workflow")
+                    workflows[workflow_id].message = "Starting demo mode documentation generation"
+                    workflows[workflow_id].ai_powered = False
+                    
+                    # Start demo workflow
+                    await execute_next_agent(workflow_id)
+                    return {
+                        "success": True,
+                        "message": "Demo documentation generation started",
+                        "data": {
+                            "workflow_id": workflow_id,
+                            "mode": "demo"
                         }
-                    except Exception as e:
-                        logger.warning(f"Translation to {lang_key} failed: {e}")
-                        translations[lang_key] = {
-                            "content": f"Translation to {translation_agent.supported_languages[lang_key]['name']} failed. Original content:\n\n{documentation}",
-                            "language": translation_agent.supported_languages[lang_key]
-                        }
-
-                logger.info(f"Translations generated for {len(translations)} languages")
-
-                # Complete translation agent, start quality reviewer  
-                if "translation_agent" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["translation_agent"].status = "completed"
-                    workflows[workflow_id].agents["translation_agent"].progress = 100
-                    workflows[workflow_id].agents["translation_agent"].completed_at = datetime.now()
-
-                workflows[workflow_id].current_agent = "quality_reviewer"
-                if "quality_reviewer" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["quality_reviewer"].status = "active"
-                    workflows[workflow_id].agents["quality_reviewer"].started_at = datetime.now()
-                    workflows[workflow_id].agents["quality_reviewer"].current_task = "Reviewing quality"
-
-                logger.info("🔄 Current Agent: quality_reviewer (5/7) - Quality Review")
-
-                # Quality review
-                workflows[workflow_id].progress = 95
-                workflows[workflow_id].message = "Reviewing documentation quality"
-                logger.info("Starting quality review")
-                
-                quality = quality_reviewer_score_sync(agents["quality_reviewer"], documentation, code_analysis)
-                logger.info(f"Quality review complete: {quality}")
-
-                # Complete quality reviewer
-                if "quality_reviewer" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["quality_reviewer"].status = "completed"
-                    workflows[workflow_id].agents["quality_reviewer"].progress = 100
-                    workflows[workflow_id].agents["quality_reviewer"].completed_at = datetime.now()
-
-                # Cleanup
-                if os.path.exists(repo_path):
-                    shutil.rmtree(repo_path)
-                logger.info("Repository cleanup completed")
-
-                # Store real results
-                workflows[workflow_id].status = "completed"
-                workflows[workflow_id].progress = 100
-                workflows[workflow_id].message = "AI-powered documentation generation completed successfully"
-                workflows[workflow_id].completed_at = datetime.now()
-                workflows[workflow_id].current_agent = None
-                workflows[workflow_id].result = {
-                    "documentation": documentation,
-                    "translations": translations,
-                    "diagrams": diagrams,
-                    "quality": quality,
-                    "analysis": code_analysis,
-                    "ai_generated": True
-                }
-
-                logger.info("Real AI workflow completed successfully")
-                
+                    }
             except Exception as e:
                 # If real analysis fails, show the error and fall back to demo mode
                 error_msg = str(e)
@@ -607,6 +684,23 @@ async def get_workflow_status(workflow_id: str):
     
     workflow = workflows[workflow_id]
     
+    # Check for workflow timeout (10 minutes)
+    if workflow.status == "processing":
+        current_time = datetime.now()
+        elapsed_time = (current_time - workflow.created_at).total_seconds()
+        
+        if elapsed_time > 600:  # 10 minutes timeout
+            logger.warning(f"Workflow {workflow_id} timed out after {elapsed_time} seconds")
+            workflow.status = "failed"
+            workflow.progress = 100
+            workflow.message = "Workflow timed out - please try again"
+            workflow.completed_at = current_time
+            workflow.current_agent = None
+            
+            # Clean up
+            if workflow_id in agent_execution_queue:
+                del agent_execution_queue[workflow_id]
+    
     # Only auto-advance agents for demo mode workflows (not real AI workflows)
     # Real AI workflows manage their own progression
     if (workflow.status == "processing" and 
@@ -648,7 +742,8 @@ async def get_workflow_status(workflow_id: str):
             "created_at": workflow.created_at.isoformat(),
             "completed_at": workflow.completed_at.isoformat() if workflow.completed_at else None,
             "agents": agents_data,
-            "result": workflow.result
+            "result": workflow.result,
+            "ai_powered": getattr(workflow, 'ai_powered', False)
         }
     }
 
@@ -939,6 +1034,43 @@ async def serve_frontend(path: str):
             "note": "React frontend build files not found. Please build the frontend first.",
             "api_docs": "/docs"
         }
+
+@app.post("/stop-workflow")
+async def stop_workflow(request: StopWorkflowRequest):
+    """Stop a running workflow"""
+    workflow_id = request.workflow_id
+    
+    if workflow_id not in workflows:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    workflow = workflows[workflow_id]
+    
+    if workflow.status != "processing":
+        raise HTTPException(status_code=400, detail="Workflow is not in progress")
+    
+    # Mark workflow as stopped
+    workflow.status = "stopped"
+    workflow.progress = 100
+    workflow.message = "Workflow stopped by user"
+    workflow.completed_at = datetime.now()
+    workflow.current_agent = None
+    
+    # Mark all agents as idle
+    for agent_id in workflow.agents:
+        workflow.agents[agent_id].status = "idle"
+        workflow.agents[agent_id].progress = 0
+        workflow.agents[agent_id].current_task = None
+    
+    # Clean up agent execution queue
+    if workflow_id in agent_execution_queue:
+        del agent_execution_queue[workflow_id]
+    
+    logger.info(f"Workflow {workflow_id} stopped by user")
+    
+    return {
+        "success": True,
+        "message": "Workflow stopped successfully"
+    }
 
 if __name__ == "__main__":
     # Get port from environment variable (for Cloud Run)

@@ -76,9 +76,18 @@ const Documentation = () => {
           setQualityMetrics({
             overall_score: result.quality.overall_score || 0,
             completeness: result.quality.completeness || 0,
-            accuracy: result.quality.technical_accuracy || 0,
-            usefulness: result.quality.clarity || 0,
+            accuracy: result.quality.technical_accuracy || result.quality.accuracy || 0,
+            usefulness: result.quality.clarity || result.quality.usefulness || 0,
             suggestions_count: result.quality.feedback ? 1 : 0
+          });
+        } else {
+          // Set default quality metrics if not available
+          setQualityMetrics({
+            overall_score: 0,
+            completeness: 0,
+            accuracy: 0,
+            usefulness: 0,
+            suggestions_count: 0
           });
         }
       } else {
@@ -309,7 +318,7 @@ The system uses a multi-agent approach with specialized agents for different tas
         <div className="p-8">
           {/* Documentation Tab */}
           {activeTab === 'documentation' && (
-            <div className="prose prose-lg max-w-none">
+            <div className="prose prose-lg prose-custom max-w-none text-wrap">
               <ReactMarkdown
                 components={{
                   code({node, inline, className, children, ...props}) {
@@ -373,7 +382,7 @@ The system uses a multi-agent approach with specialized agents for different tas
                           Download
                         </button>
                       </div>
-                      <div className="prose prose-lg max-w-none">
+                      <div className="prose prose-lg prose-custom max-w-none text-wrap">
                         <ReactMarkdown
                           components={{
                             code({node, inline, className, children, ...props}) {
@@ -449,7 +458,9 @@ The system uses a multi-agent approach with specialized agents for different tas
                   ].map((metric, index) => (
                     <div key={index} className="text-center p-4 bg-gray-50 rounded-lg">
                       <div className={`text-3xl font-bold text-${metric.color}-600 mb-1`}>
-                        {metric.value}/10
+                        {typeof metric.value === 'number' ? 
+                          (metric.value > 1 ? metric.value.toFixed(1) : (metric.value * 10).toFixed(1)) 
+                          : '0.0'}/10
                       </div>
                       <div className="text-sm text-gray-600">{metric.label}</div>
                     </div>

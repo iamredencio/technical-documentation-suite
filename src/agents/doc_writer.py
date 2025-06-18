@@ -85,30 +85,83 @@ class DocumentationWriterAgent(BaseAgent):
             # Use AI service for real documentation generation
             full_documentation = await ai_service.generate_documentation(analysis_data, target_audience)
             
-            # If AI-generated content is very short, supplement with traditional sections
-            if len(full_documentation) < 500:
-                self.logger.info("AI response too short, supplementing with traditional documentation")
+            # If AI-generated content is very short or empty, supplement with traditional sections
+            if not full_documentation or len(full_documentation.strip()) < 100:
+                self.logger.info("AI response empty or too short, generating fallback documentation")
+                
+                # Create basic documentation even with minimal data
+                project_id = analysis_data.get("project_id", "Repository")
+                repo_url = analysis_data.get("repository_url", "Unknown")
+                file_count = analysis_data.get("file_count", 0)
+                lines_of_code = analysis_data.get("lines_of_code", 0)
+                
+                full_documentation = f"""# {project_id} Documentation
+
+## Overview
+This repository has been analyzed by our AI-powered documentation system.
+
+**Repository:** {repo_url}
+**Files Analyzed:** {file_count}
+**Lines of Code:** {lines_of_code}
+
+## Analysis Results
+"""
+                
+                # Add traditional sections as available
                 traditional_sections = []
                 
-                # Add traditional sections as backup
-                if "repository_url" in analysis_data:
-                    traditional_sections.append(self._generate_overview_section(analysis_data))
-                
-                if "api_endpoints" in analysis_data:
+                if analysis_data.get("api_endpoints"):
                     traditional_sections.append(self._generate_api_section(analysis_data["api_endpoints"]))
                 
-                if "classes" in analysis_data:
+                if analysis_data.get("classes"):
                     traditional_sections.append(self._generate_classes_section(analysis_data["classes"]))
                 
-                if "functions" in analysis_data:
+                if analysis_data.get("functions"):
                     traditional_sections.append(self._generate_functions_section(analysis_data["functions"]))
                 
-                if "dependencies" in analysis_data:
+                if analysis_data.get("dependencies"):
                     traditional_sections.append(self._generate_dependencies_section(analysis_data["dependencies"]))
                 
-                # Combine AI and traditional content
-                traditional_content = "\n\n".join(traditional_sections)
-                full_documentation = f"{full_documentation}\n\n{traditional_content}"
+                if analysis_data.get("structure"):
+                    traditional_sections.append(self._generate_structure_section(analysis_data["structure"]))
+                
+                if traditional_sections:
+                    full_documentation += "\n\n".join(traditional_sections)
+                else:
+                    full_documentation += """
+This repository appears to contain minimal code or configuration files. 
+The analysis did not detect significant code structures, functions, or classes to document.
+
+## Repository Structure
+The repository contains primarily configuration and metadata files.
+
+## Next Steps
+- Add more code files to generate comprehensive documentation
+- Ensure the repository contains analyzable source code
+- Check that the repository is publicly accessible
+"""
+            else:
+                # AI generated good content, supplement if needed
+                if len(full_documentation) < 500:
+                    self.logger.info("AI response adequate but short, supplementing with traditional documentation")
+                    traditional_sections = []
+                    
+                    if analysis_data.get("api_endpoints"):
+                        traditional_sections.append(self._generate_api_section(analysis_data["api_endpoints"]))
+                    
+                    if analysis_data.get("classes"):
+                        traditional_sections.append(self._generate_classes_section(analysis_data["classes"]))
+                    
+                    if analysis_data.get("functions"):
+                        traditional_sections.append(self._generate_functions_section(analysis_data["functions"]))
+                    
+                    if analysis_data.get("dependencies"):
+                        traditional_sections.append(self._generate_dependencies_section(analysis_data["dependencies"]))
+                    
+                    # Combine AI and traditional content
+                    if traditional_sections:
+                        traditional_content = "\n\n".join(traditional_sections)
+                        full_documentation = f"{full_documentation}\n\n{traditional_content}"
             
             # Apply formatting
             if output_format == "html":
@@ -121,7 +174,7 @@ class DocumentationWriterAgent(BaseAgent):
                 data={
                     "content": full_documentation,
                     "format": output_format,
-                    "ai_generated": ai_service.enabled,
+                    "ai_generated": ai_service.is_available(),
                     "word_count": len(full_documentation.split()),
                     "target_audience": target_audience
                 },
@@ -313,6 +366,38 @@ This project is a software repository with {file_count} files containing approxi
         
         return section
     
+    def _generate_structure_section(self, structure: Dict[str, Any]) -> str:
+        """Generate repository structure section"""
+        if not structure:
+            return ""
+        
+        section = "## Repository Structure\n\n"
+        
+        # Get top-level directories and files
+        root_items = structure.get(".", [])
+        if root_items:
+            section += "### Root Directory\n\n"
+            for item in sorted(root_items):
+                if not item.startswith('.'):  # Skip hidden files
+                    section += f"- `{item}`\n"
+            section += "\n"
+        
+        # Get other directories
+        directories = [k for k in structure.keys() if k != "." and not k.startswith('.git')]
+        if directories:
+            section += "### Directory Structure\n\n"
+            for directory in sorted(directories):
+                files = structure[directory]
+                if files:
+                    section += f"**`{directory}/`**\n"
+                    for file in sorted(files)[:5]:  # Limit to first 5 files
+                        section += f"  - `{file}`\n"
+                    if len(files) > 5:
+                        section += f"  - ... and {len(files) - 5} more files\n"
+                    section += "\n"
+        
+        return section
+    
     async def _format_documentation(self, message: Message) -> Message:
         """Format documentation for different outputs"""
         content = message.data.get("content", "")
@@ -351,4 +436,31 @@ This project is a software repository with {file_count} files containing approxi
         rst_content = markdown_content
         rst_content = rst_content.replace("# ", "").replace("\n", "\n" + "="*50 + "\n", 1)
         rst_content = rst_content.replace("## ", "").replace("\n", "\n" + "-"*30 + "\n", 1)
-        return rst_content 
+        return rst_content
+
+    async def _generate_documentation_async(self, analysis_data: Dict[str, Any], target_audience: str = "developers") -> str:
+        """Generate documentation asynchronously - wrapper for main.py compatibility"""
+        try:
+            message = Message(
+                type="generate_documentation",
+                data={
+                    "analysis": analysis_data,
+                    "format": "markdown",
+                    "audience": target_audience
+                },
+                sender="main",
+                recipient=self.agent_id
+            )
+            
+            result = await self._generate_documentation(message)
+            
+            # Ensure result is a Message object and has data
+            if hasattr(result, 'data') and isinstance(result.data, dict):
+                return result.data.get("content", "Documentation generation failed")
+            else:
+                self.logger.error(f"Unexpected result type: {type(result)}")
+                return "Documentation generation failed - unexpected result format"
+                
+        except Exception as e:
+            self.logger.error(f"Documentation generation wrapper failed: {e}")
+            return f"Documentation generation failed: {str(e)}" 

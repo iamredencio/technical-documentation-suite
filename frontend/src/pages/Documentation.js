@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import mermaid from 'mermaid';
@@ -16,8 +17,10 @@ import {
   RefreshCw,
   CheckCircle,
   XCircle,
-  Languages
+  Languages,
+  Globe
 } from 'lucide-react';
+import { apiService } from '../config/api';
 
 const Documentation = () => {
   const { workflowId } = useParams();
@@ -43,7 +46,7 @@ const Documentation = () => {
   const fetchDocumentation = async () => {
     try {
       // Fetch the actual workflow status and results from the backend
-      const response = await axios.get(`http://localhost:8080/status/${workflowId}`);
+      const response = await apiService.getWorkflowStatus(workflowId);
       
       if (response.data.success && response.data.data.result) {
         const workflowData = response.data.data;

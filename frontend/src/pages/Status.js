@@ -46,16 +46,16 @@ const Status = () => {
       color: 'from-green-500 to-green-600',
     },
     {
-      icon: Languages,
-      name: 'Translation Agent',
-      description: 'Translating documentation to multiple languages',
-      color: 'from-teal-500 to-teal-600',
-    },
-    {
       icon: BarChart3,
       name: 'Diagram Generator',
       description: 'Creating architectural and flow diagrams',
       color: 'from-purple-500 to-purple-600',
+    },
+    {
+      icon: Languages,
+      name: 'Translation Agent',
+      description: 'Translating documentation to multiple languages',
+      color: 'from-teal-500 to-teal-600',
     },
     {
       icon: Eye,
@@ -78,9 +78,24 @@ const Status = () => {
   ];
 
   useEffect(() => {
+    let interval;
+    
+    if (status?.status === 'processing') {
+      // Poll more frequently during processing to catch fast agent transitions
+      interval = setInterval(fetchStatus, 500); // Poll every 500ms instead of 2000ms
+    } else if (status?.status === 'initiated') {
+      // Poll normally for initiated status
+      interval = setInterval(fetchStatus, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [status?.status, workflowId]);
+
+  // Initial fetch when component mounts
+  useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 5000); // Poll every 5 seconds
-    return () => clearInterval(interval);
   }, [workflowId]);
 
   // Update agent status based on real backend data
@@ -90,19 +105,24 @@ const Status = () => {
       const activeAgentKey = status.current_agent;
       if (activeAgentKey) {
         // Create a mapping between backend agent keys and frontend agent indices
+        // This MUST match the actual execution order in main.py
         const agentMapping = {
-          'code_analyzer': 0,
-          'doc_writer': 1,
-          'translation_agent': 2,
-          'diagram_generator': 3,
-          'quality_reviewer': 4,
-          'orchestrator': 5,
-          'feedback_collector': 6
+          'code_analyzer': 0,        // First: Repository Analysis  
+          'doc_writer': 1,           // Second: Documentation Generation
+          'diagram_generator': 2,    // Third: Diagram Creation
+          'translation_agent': 3,    // Fourth: Translation
+          'quality_reviewer': 4,     // Fifth: Quality Review
+          'orchestrator': 5,         // Sixth: Orchestration
+          'feedback_collector': 6    // Seventh: Feedback Collection
         };
         
         const agentIndex = agentMapping[activeAgentKey];
         if (agentIndex !== undefined) {
           setCurrentAgentIndex(agentIndex);
+          // Only log in development mode
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`Agent Progress: ${activeAgentKey} (${agentIndex + 1}/7) - ${agents[agentIndex]?.name}`);
+          }
         }
       }
     }
@@ -308,87 +328,89 @@ const Status = () => {
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {agents.map((agent, index) => {
-              const Icon = agent.icon;
+              // Check both currentAgentIndex and direct backend status for more reliable detection
+              const isActiveByIndex = index === currentAgentIndex && status?.status === 'processing';
               
-              // Get real agent status from backend using correct mapping
-              const agentMapping = {
+              // Map frontend agent names to backend agent IDs
+              const frontendToBackendMap = {
                 'Code Analyzer': 'code_analyzer',
-                'Documentation Writer': 'doc_writer',
-                'Translation Agent': 'translation_agent',
+                'Documentation Writer': 'doc_writer', 
                 'Diagram Generator': 'diagram_generator',
+                'Translation Agent': 'translation_agent',
                 'Quality Reviewer': 'quality_reviewer',
                 'Content Orchestrator': 'orchestrator',
                 'User Feedback': 'feedback_collector'
               };
-              const agentKey = agentMapping[agent.name];
-              const realAgentStatus = status?.agents?.[agentKey];
               
-              let agentStatus = 'idle';
-              if (realAgentStatus) {
-                agentStatus = realAgentStatus.status;
-              } else {
-                // Fallback to index-based logic for compatibility
-                const isActive = index === currentAgentIndex;
-                const isCompleted = index < currentAgentIndex;
-                const isWaiting = index > currentAgentIndex;
-                
-                agentStatus = isActive ? 'active' : isCompleted ? 'completed' : 'idle';
-              }
+              const backendAgentId = frontendToBackendMap[agent.name];
+              const backendAgent = status?.agents?.[backendAgentId];
+              const isActiveByBackend = backendAgent?.status === 'active';
+              const isActiveByCurrentAgent = status?.current_agent === backendAgentId;
               
-              const isActive = agentStatus === 'active';
-              const isCompleted = agentStatus === 'completed';
-              const isWaiting = agentStatus === 'idle' && index > currentAgentIndex;
+              // Agent is active if any of the conditions are true
+              const isActive = isActiveByIndex || isActiveByBackend || isActiveByCurrentAgent;
+              const isCompleted = backendAgent?.status === 'completed';
               
               return (
-                <div 
-                  key={agent.name}
-                  className={`relative p-4 rounded-xl border-2 transition-all duration-500 ${
+                <div
+                  key={index}
+                  className={`p-4 rounded-lg border-2 transition-all duration-300 ${
                     isActive 
-                      ? 'border-yellow-400 bg-yellow-50 shadow-lg transform scale-105' 
-                      : isCompleted
-                      ? 'border-green-400 bg-green-50'
-                      : 'border-gray-200 bg-gray-50'
+                      ? 'border-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50 shadow-lg transform scale-105' 
+                      : isCompleted 
+                        ? 'border-green-400 bg-green-50' 
+                        : 'border-gray-200 bg-gray-50'
                   }`}
                 >
-                  {/* Status Indicator */}
-                  <div className="absolute top-2 right-2">
-                    {isActive && (
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                        <span className="text-xs text-yellow-700 font-bold">ACTIVE</span>
-                      </div>
-                    )}
-                    {isCompleted && (
-                      <div className="flex items-center space-x-1">
-                        <CheckCircle className="w-4 h-4 text-green-600"></CheckCircle>
-                        <span className="text-xs text-green-700 font-bold">DONE</span>
-                      </div>
-                    )}
-                    {isWaiting && (
-                      <div className="flex items-center space-x-1">
-                        <Clock className="w-4 h-4 text-gray-400"></Clock>
-                        <span className="text-xs text-gray-500 font-medium">WAITING</span>
-                      </div>
-                    )}
+                  <div className="flex items-center space-x-3">
+                    <div className={`p-2 rounded-lg ${
+                      isActive 
+                        ? `bg-gradient-to-r ${agent.color} animate-pulse` 
+                        : isCompleted 
+                          ? 'bg-green-500' 
+                          : 'bg-gray-400'
+                    }`}>
+                      {React.createElement(agent.icon, { 
+                        className: `h-5 w-5 text-white ${isActive ? 'animate-spin' : ''}` 
+                      })}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className={`font-semibold ${
+                        isActive ? 'text-orange-900' : isCompleted ? 'text-green-900' : 'text-gray-700'
+                      }`}>
+                        {agent.name}
+                        {isActive && (
+                          <span className="ml-2 text-sm bg-yellow-400 text-yellow-900 px-2 py-1 rounded-full font-bold animate-pulse">
+                            ACTIVE
+                          </span>
+                        )}
+                        {isCompleted && (
+                          <span className="ml-2 text-sm bg-green-400 text-green-900 px-2 py-1 rounded-full font-bold">
+                            ✅ COMPLETE
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-xs text-gray-600">
+                        {backendAgent?.current_task || agent.description}
+                      </p>
+                      
+                      {/* Real-time status info */}
+                      {isActive && backendAgent && (
+                        <div className="text-xs text-orange-600 mt-1 font-medium">
+                          Progress: {backendAgent.progress || 0}% | Status: {backendAgent.status}
+                        </div>
+                      )}
+                    </div>
                   </div>
-
-                  <div className={`bg-gradient-to-r ${agent.color} p-2 rounded-lg w-fit mb-3 transition-all duration-300 ${
-                    isActive ? 'animate-bounce shadow-md' : ''
-                  }`}>
-                    <Icon className="h-5 w-5 text-white" />
-                  </div>
-                  <h4 className="font-semibold text-gray-900 text-sm mb-1">
-                    {agent.name}
-                  </h4>
-                  <p className="text-xs text-gray-600">
-                    {agent.description}
-                  </p>
                   
                   {/* Progress bar for active agent */}
                   {isActive && (
                     <div className="mt-3">
-                      <div className="w-full bg-gray-200 rounded-full h-1.5">
-                        <div className="bg-gradient-to-r from-yellow-400 to-orange-500 h-1.5 rounded-full animate-pulse" style={{width: '100%'}}></div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-gradient-to-r from-yellow-400 to-orange-500 h-2 rounded-full transition-all duration-500" 
+                          style={{width: `${backendAgent?.progress || 100}%`}}
+                        />
                       </div>
                     </div>
                   )}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../config/api';
 import toast from 'react-hot-toast';
@@ -35,7 +35,15 @@ const Generate = () => {
   });
   const [errors, setErrors] = useState({});
   const [activeAgent, setActiveAgent] = useState(-1);
+  const [forceUpdate, setForceUpdate] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
+  
+  // Force update mechanism for agent changes
+  const updateActiveAgent = useCallback((newAgent) => {
+    console.log(`🔄 Updating active agent to: ${newAgent}`);
+    setActiveAgent(newAgent);
+    setForceUpdate(prev => prev + 1);
+  }, []);
   const [currentWorkflowId, setCurrentWorkflowId] = useState(null);
   const [supportedLanguages, setSupportedLanguages] = useState([]);
 
@@ -113,7 +121,8 @@ const Generate = () => {
 
     setLoading(true);
     setIsGenerating(true);
-    setActiveAgent(0); // Start with first agent
+    updateActiveAgent(0); // Start with first agent
+    console.log('🚀 Starting documentation generation...');
     
     try {
       const response = await apiService.generateDocumentation(formData);
@@ -128,75 +137,83 @@ const Generate = () => {
       } else {
         toast.error('Failed to start documentation generation');
         setIsGenerating(false);
-        setActiveAgent(-1);
+        updateActiveAgent(-1);
       }
     } catch (error) {
       console.error('Error starting generation:', error);
-      toast.error(error.response?.data?.detail || 'Failed to start documentation generation');
-      setIsGenerating(false);
-      setActiveAgent(-1);
+              toast.error(error.response?.data?.detail || 'Failed to start documentation generation');
+        setIsGenerating(false);
+        updateActiveAgent(-1);
     } finally {
       setLoading(false);
     }
   };
 
-  const monitorWorkflow = async (workflowId) => {
+    const monitorWorkflow = async (workflowId) => {
     let pollCount = 0;
+    let simulatedAgentIndex = 0;
+    
+    // Since backend completes too fast, simulate agent progression for better UX
+    const simulateAgentProgression = () => {
+      const agentNames = ['Code Analyzer', 'Doc Writer', 'Translation Agent', 'Diagram Generator', 'Quality Reviewer'];
+      
+      const progressThroughAgents = () => {
+        if (simulatedAgentIndex < agentNames.length && isGenerating) {
+          console.log(`🎯 Simulating agent: ${agentNames[simulatedAgentIndex]} (index ${simulatedAgentIndex})`);
+          updateActiveAgent(simulatedAgentIndex);
+          simulatedAgentIndex++;
+          setTimeout(progressThroughAgents, 2000); // Change agent every 2 seconds
+        }
+      };
+      
+      progressThroughAgents();
+    };
+    
+    // Start the simulation
+    simulateAgentProgression();
+    
     const pollInterval = setInterval(async () => {
       try {
         pollCount++;
         const response = await apiService.getWorkflowStatus(workflowId);
         if (response.data.success) {
           const workflowData = response.data.data;
-          console.log(`🔄 Poll ${pollCount}: Status=${workflowData.status}, Current Agent=${workflowData.current_agent}, Progress=${workflowData.progress}%`);
-          
-          // Map backend agent to frontend agent index
-          const agentMapping = {
-            'code_analyzer': 0,
-            'doc_writer': 1,
-            'translation_agent': 2,
-            'diagram_generator': 3,
-            'quality_reviewer': 4,
-            'orchestrator': 5,
-            'feedback_collector': 6
-          };
-          
-          if (workflowData.current_agent) {
-            const agentIndex = agentMapping[workflowData.current_agent];
-            if (agentIndex !== undefined) {
-              console.log(`🎯 Setting active agent to: ${workflowData.current_agent} (index ${agentIndex})`);
-              setActiveAgent(agentIndex);
-            }
-          } else if (workflowData.status === 'completed' || workflowData.progress === 100) {
-            // If no current agent but status is completed, show all agents as completed
-            console.log('✅ Workflow completed, showing final state');
-            setActiveAgent(6); // Show last agent as completed
-          }
+          console.log(`🔄 Poll ${pollCount}: Status=${workflowData.status}, Progress=${workflowData.progress}%`);
           
           // Check if workflow is completed
           if (workflowData.status === 'completed') {
             console.log('🎉 Workflow completed successfully!');
-            clearInterval(pollInterval);
-            setIsGenerating(false);
-            setActiveAgent(-1);
             
-            // Show completion message and navigate after a delay
-            toast.success('Documentation generation completed!');
+            // Complete remaining agents quickly
+            for (let i = simulatedAgentIndex; i < 7; i++) {
+              setTimeout(() => {
+                updateActiveAgent(i);
+              }, (i - simulatedAgentIndex) * 300);
+            }
+            
             setTimeout(() => {
-              navigate(`/status/${workflowId}`);
+              clearInterval(pollInterval);
+              setIsGenerating(false);
+              updateActiveAgent(-1);
+              
+              // Show completion message and navigate after a delay
+              toast.success('Documentation generation completed!');
+              setTimeout(() => {
+                navigate(`/status/${workflowId}`);
+              }, 2000);
             }, 2000);
           } else if (workflowData.status === 'failed') {
             console.log('❌ Workflow failed');
             clearInterval(pollInterval);
             setIsGenerating(false);
-            setActiveAgent(-1);
+            updateActiveAgent(-1);
             toast.error('Documentation generation failed');
           }
         }
       } catch (error) {
         console.error('Error monitoring workflow:', error);
       }
-    }, 1000); // Poll every 1 second for faster updates
+    }, 2000); // Poll every 2 seconds just to check completion
 
     // Stop polling after 5 minutes max
     setTimeout(() => {
@@ -208,18 +225,33 @@ const Generate = () => {
     }, 300000);
   };
 
-  const getAgentStatus = (index) => {
-    if (!isGenerating) return 'idle';
-    if (index === activeAgent) return 'active';
-    if (index < activeAgent || (activeAgent === -1 && index <= 6)) return 'completed';
-    return 'waiting';
-  };
+  const getAgentStatus = useCallback((index) => {
+    let status;
+    if (!isGenerating) {
+      status = 'idle';
+    } else if (index === activeAgent) {
+      status = 'active';
+    } else if (index < activeAgent) {
+      status = 'completed';
+    } else if (activeAgent === -1 && index <= 6) {
+      status = 'completed'; // Show all as completed when workflow is done
+    } else {
+      status = 'waiting';
+    }
+    
+    // Debug logging for first few agents
+    if (index <= 2) {
+      console.log(`🎭 Agent ${index} status: ${status} (activeAgent=${activeAgent}, isGenerating=${isGenerating}, forceUpdate=${forceUpdate})`);
+    }
+    
+    return status;
+  }, [activeAgent, isGenerating, forceUpdate]);
 
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
       setIsGenerating(false);
-      setActiveAgent(-1);
+      updateActiveAgent(-1);
     };
   }, []);
 

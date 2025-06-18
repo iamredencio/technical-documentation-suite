@@ -5,13 +5,20 @@ All remaining agents for the Technical Documentation Suite
 from typing import Dict, Any, List, Optional
 from .base_agent import BaseAgent, Message
 import json
+import asyncio
+import uuid
+import logging
+from datetime import datetime
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class DiagramGeneratorAgent(BaseAgent):
     """Agent responsible for generating diagrams"""
     
     def __init__(self, agent_id: str):
         super().__init__(agent_id, "DiagramGenerator")
-        self.diagram_types = ["architecture", "flow", "class", "sequence"]
+        self.diagram_types = ["architecture", "sequence", "class", "component"]
     
     async def handle_message(self, message: Message) -> Optional[Message]:
         if message.type == "generate_diagram":
@@ -19,16 +26,17 @@ class DiagramGeneratorAgent(BaseAgent):
         return None
     
     async def _generate_diagram(self, message: Message) -> Message:
-        diagram_type = message.data.get("type", "architecture")
+        # Extract analysis data from message
         analysis_data = message.data.get("analysis", {})
+        diagram_type = message.data.get("type", "architecture")
         
-        # Mock Mermaid diagram generation
+        # Generate appropriate diagram based on type
         if diagram_type == "architecture":
             diagram_content = self._generate_architecture_diagram(analysis_data)
         elif diagram_type == "class":
             diagram_content = self._generate_class_diagram(analysis_data)
         else:
-            diagram_content = "graph TD\n    A[Start] --> B[End]"
+            diagram_content = self._generate_architecture_diagram(analysis_data)
         
         return Message(
             type="diagram_generated",
@@ -42,44 +50,58 @@ class DiagramGeneratorAgent(BaseAgent):
         )
     
     def _generate_architecture_diagram(self, analysis_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Generate repository-specific diagrams based on code analysis"""
+        """Generate multiple architecture diagrams based on actual repository data"""
         diagrams = []
         
-        # 1. Project Structure Diagram
-        if analysis_data.get('file_count', 0) > 0:
+        # Generate project structure diagram
+        try:
             structure_diagram = self._generate_project_structure_diagram(analysis_data)
             diagrams.append({
-                "type": "architecture",
-                "title": f"{analysis_data.get('project_id', 'Project')} Structure",
+                "type": "structure",
+                "title": "Project Structure",
                 "content": structure_diagram
             })
+        except Exception as e:
+            logger.warning(f"Failed to generate structure diagram: {e}")
         
-        # 2. Class Hierarchy Diagram (if classes exist)
-        if analysis_data.get('classes', []):
-            class_diagram = self._generate_repository_class_diagram(analysis_data)
-            diagrams.append({
-                "type": "class",
-                "title": "Class Hierarchy",
-                "content": class_diagram
-            })
+        # Generate class hierarchy diagram if classes exist
+        classes = analysis_data.get('classes', [])
+        if classes:
+            try:
+                class_diagram = self._generate_repository_class_diagram(analysis_data)
+                diagrams.append({
+                    "type": "class",
+                    "title": "Class Hierarchy",
+                    "content": class_diagram
+                })
+            except Exception as e:
+                logger.warning(f"Failed to generate class diagram: {e}")
         
-        # 3. API Flow Diagram (if API endpoints exist)
-        if analysis_data.get('api_endpoints', []):
-            api_diagram = self._generate_api_flow_diagram(analysis_data)
-            diagrams.append({
-                "type": "flow",
-                "title": "API Flow",
-                "content": api_diagram
-            })
+        # Generate API flow diagram if endpoints exist
+        endpoints = analysis_data.get('api_endpoints', [])
+        if endpoints:
+            try:
+                api_diagram = self._generate_api_flow_diagram(analysis_data)
+                diagrams.append({
+                    "type": "sequence",
+                    "title": "API Flow",
+                    "content": api_diagram
+                })
+            except Exception as e:
+                logger.warning(f"Failed to generate API diagram: {e}")
         
-        # 4. Dependencies Diagram
-        if analysis_data.get('dependencies', []):
-            deps_diagram = self._generate_dependencies_diagram(analysis_data)
-            diagrams.append({
-                "type": "graph",
-                "title": "Dependencies",
-                "content": deps_diagram
-            })
+        # Generate dependencies diagram
+        dependencies = analysis_data.get('dependencies', [])
+        if dependencies:
+            try:
+                deps_diagram = self._generate_dependencies_diagram(analysis_data)
+                diagrams.append({
+                    "type": "dependencies",
+                    "title": "Dependencies",
+                    "content": deps_diagram
+                })
+            except Exception as e:
+                logger.warning(f"Failed to generate dependencies diagram: {e}")
         
         # If no specific diagrams, create a general project overview
         if not diagrams:
@@ -98,39 +120,63 @@ class DiagramGeneratorAgent(BaseAgent):
         functions = analysis_data.get('functions', [])[:8]  # Limit to 8 functions
         classes = analysis_data.get('classes', [])[:6]  # Limit to 6 classes
         
-        diagram = f"graph TD\n    A[{project_name}] --> B[Source_Code]\n"
+        logger.debug(f"Generating diagram for project: {project_name} with {len(functions)} functions, {len(classes)} classes")
         
-        # Add classes
+        diagram = f"graph TD\n    A[\"{project_name}\"]\n"
+        
+        # Add basic structure
+        diagram += "    A --> B[\"📁 Source Code\"]\n"
+        diagram += "    A --> C[\"📋 Statistics\"]\n"
+        
+        # Add statistics
+        stats = analysis_data.get('statistics', {})
+        file_count = stats.get('total_files', analysis_data.get('file_count', 0))
+        line_count = stats.get('total_lines', analysis_data.get('lines_of_code', 0))
+        
+        diagram += f"    C --> C1[\"{file_count} Files\"]\n"
+        diagram += f"    C --> C2[\"{line_count} Lines of Code\"]\n"
+        diagram += f"    C --> C3[\"{len(functions)} Functions\"]\n"
+        diagram += f"    C --> C4[\"{len(classes)} Classes\"]\n"
+        
+        # Add classes with more details
         if classes:
-            diagram += "    B --> C[Classes]\n"
-            for i, cls in enumerate(classes):
+            diagram += "    B --> CLS[\"🏗️ Classes\"]\n"
+            for i, cls in enumerate(classes[:6]):  # Limit to prevent diagram overflow
                 if isinstance(cls, dict):
-                    class_name = cls.get('name', f'Class{i+1}').replace(' ', '_').replace('-', '_')
+                    class_name = cls.get('name', f'Class{i+1}')
+                    # Sanitize name for Mermaid
+                    safe_name = class_name.replace(' ', '_').replace('-', '_').replace('.', '_')[:20]
+                    diagram += f"    CLS --> CLS{i+1}[\"{safe_name}\"]\n"
                 else:
-                    class_name = str(cls).replace(' ', '_').replace('-', '_')
-                diagram += f"    C --> C{i+1}[{class_name}]\n"
+                    safe_name = str(cls).replace(' ', '_').replace('-', '_').replace('.', '_')[:20]
+                    diagram += f"    CLS --> CLS{i+1}[\"{safe_name}\"]\n"
         
-        # Add functions
+        # Add functions with more details
         if functions:
-            diagram += "    B --> F[Functions]\n"
-            for i, func in enumerate(functions):
+            diagram += "    B --> FN[\"⚙️ Functions\"]\n"
+            for i, func in enumerate(functions[:6]):  # Limit to prevent diagram overflow
                 if isinstance(func, dict):
-                    func_name = func.get('name', f'function{i+1}').replace(' ', '_').replace('-', '_')
+                    func_name = func.get('name', f'function{i+1}')
+                    safe_name = func_name.replace(' ', '_').replace('-', '_').replace('.', '_')[:20]  
+                    diagram += f"    FN --> FN{i+1}[\"{safe_name}\"]\n"
                 else:
-                    func_name = str(func).replace(' ', '_').replace('-', '_')
-                diagram += f"    F --> F{i+1}[{func_name}]\n"
+                    safe_name = str(func).replace(' ', '_').replace('-', '_').replace('.', '_')[:20]
+                    diagram += f"    FN --> FN{i+1}[\"{safe_name}\"]\n"
         
-        # Add dependencies
+        # Add dependencies with more details
         dependencies = analysis_data.get('dependencies', [])[:5]
         if dependencies:
-            diagram += "    A --> D[Dependencies]\n"
+            diagram += "    A --> DEP[\"📦 Dependencies\"]\n"
             for i, dep in enumerate(dependencies):
                 if isinstance(dep, dict):
-                    dep_name = dep.get('name', f'dep{i+1}').replace(' ', '_').replace('-', '_')
+                    dep_name = dep.get('name', f'dep{i+1}')
+                    safe_name = dep_name.replace(' ', '_').replace('-', '_').replace('.', '_')[:15]
+                    diagram += f"    DEP --> DEP{i+1}[\"{safe_name}\"]\n"
                 else:
-                    dep_name = str(dep).replace(' ', '_').replace('-', '_')
-                diagram += f"    D --> D{i+1}[{dep_name}]\n"
+                    safe_name = str(dep).replace(' ', '_').replace('-', '_').replace('.', '_')[:15]
+                    diagram += f"    DEP --> DEP{i+1}[\"{safe_name}\"]\n"
         
+        logger.debug(f"Generated diagram with {len(diagram)} characters")
         return diagram
     
     def _generate_repository_class_diagram(self, analysis_data: Dict[str, Any]) -> str:
@@ -186,32 +232,75 @@ class DiagramGeneratorAgent(BaseAgent):
         return diagram
     
     def _generate_dependencies_diagram(self, analysis_data: Dict[str, Any]) -> str:
-        """Generate dependencies diagram"""
-        dependencies = analysis_data.get('dependencies', [])[:8]  # Limit to 8 dependencies
+        """Generate dependencies diagram with proper categorization"""
+        dependencies = analysis_data.get('dependencies', [])[:12]  # Limit to prevent overflow
         project_name = analysis_data.get('project_id', 'Project').replace(' ', '_').replace('-', '_')
         
-        diagram = f"graph LR\n    A[{project_name}] --> B[Runtime_Deps]\n    A --> C[Dev_Deps]\n\n"
+        logger.debug(f"Generating dependencies diagram with {len(dependencies)} dependencies")
         
-        runtime_deps = [d for d in dependencies if isinstance(d, dict) and d.get('type') == 'runtime'][:4]
-        dev_deps = [d for d in dependencies if isinstance(d, dict) and d.get('type') == 'development'][:4]
+        diagram = f"graph TD\n    PROJECT[\"{project_name}\"]\n"
         
-        # If no categorized dependencies, use first 4 as runtime deps
-        if not runtime_deps and not dev_deps:
-            runtime_deps = dependencies[:4]
+        # Categorize dependencies more intelligently
+        runtime_deps = []
+        dev_deps = []
+        framework_deps = []
         
-        for i, dep in enumerate(runtime_deps):
+        framework_keywords = ['fastapi', 'flask', 'django', 'express', 'react', 'vue', 'angular', 'spring']
+        dev_keywords = ['test', 'dev', 'debug', 'lint', 'format', 'build', 'webpack', 'babel']
+        
+        for dep in dependencies:
             if isinstance(dep, dict):
-                dep_name = dep.get('name', f'runtime_dep_{i+1}').replace(' ', '_').replace('-', '_')
+                dep_name = dep.get('name', '').lower()
+                dep_type = dep.get('type', 'runtime')
             else:
-                dep_name = str(dep).replace(' ', '_').replace('-', '_')
-            diagram += f"    B --> R{i+1}[{dep_name}]\n"
+                dep_name = str(dep).lower()
+                dep_type = 'runtime'
+            
+            # Categorize based on keywords and explicit type
+            if dep_type == 'development' or any(keyword in dep_name for keyword in dev_keywords):
+                dev_deps.append(dep)
+            elif any(keyword in dep_name for keyword in framework_keywords):
+                framework_deps.append(dep)
+            else:
+                runtime_deps.append(dep)
         
-        for i, dep in enumerate(dev_deps):
-            if isinstance(dep, dict):
-                dep_name = dep.get('name', f'dev_dep_{i+1}').replace(' ', '_').replace('-', '_')
-            else:
-                dep_name = str(dep).replace(' ', '_').replace('-', '_')
-            diagram += f"    C --> D{i+1}[{dep_name}]\n"
+        # Add framework dependencies
+        if framework_deps:
+            diagram += "    PROJECT --> FRAMEWORK[\"🏗️ Frameworks\"]\n"
+            for i, dep in enumerate(framework_deps[:4]):
+                if isinstance(dep, dict):
+                    dep_name = dep.get('name', f'framework_{i+1}')[:15]
+                else:
+                    dep_name = str(dep)[:15]
+                safe_name = dep_name.replace('-', '_').replace('.', '_')
+                diagram += f"    FRAMEWORK --> FW{i+1}[\"{safe_name}\"]\n"
+        
+        # Add runtime dependencies  
+        if runtime_deps:
+            diagram += "    PROJECT --> RUNTIME[\"⚙️ Runtime\"]\n"
+            for i, dep in enumerate(runtime_deps[:5]):
+                if isinstance(dep, dict):
+                    dep_name = dep.get('name', f'runtime_{i+1}')[:15]
+                else:
+                    dep_name = str(dep)[:15]
+                safe_name = dep_name.replace('-', '_').replace('.', '_')
+                diagram += f"    RUNTIME --> RT{i+1}[\"{safe_name}\"]\n"
+        
+        # Add development dependencies
+        if dev_deps:
+            diagram += "    PROJECT --> DEV[\"🛠️ Development\"]\n"
+            for i, dep in enumerate(dev_deps[:4]):
+                if isinstance(dep, dict):
+                    dep_name = dep.get('name', f'dev_{i+1}')[:15]
+                else:
+                    dep_name = str(dep)[:15]
+                safe_name = dep_name.replace('-', '_').replace('.', '_')
+                diagram += f"    DEV --> DV{i+1}[\"{safe_name}\"]\n"
+        
+        # If no dependencies found, show a basic structure
+        if not dependencies:
+            diagram += "    PROJECT --> DEPS[\"📦 No Dependencies Found\"]\n"
+            diagram += "    DEPS --> INFO[\"Self-contained Project\"]\n"
         
         return diagram
     
@@ -278,39 +367,104 @@ class QualityReviewerAgent(BaseAgent):
         content = message.data.get("content", "")
         analysis_data = message.data.get("analysis", {})
         
-        # Mock quality assessment
+        # Calculate comprehensive quality assessment
         quality_score = self._calculate_quality_score(content, analysis_data)
+        detailed_metrics = self._analyze_detailed_metrics(content, analysis_data)
+        improvement_suggestions = self._generate_improvement_suggestions(content, detailed_metrics)
         
         return Message(
             type="quality_review_complete",
             data={
                 "quality_score": quality_score,
-                "metrics": self.quality_metrics,
-                "suggestions": [
-                    "Add more code examples",
-                    "Improve section consistency",
-                    "Add troubleshooting section"
-                ]
+                "metrics": detailed_metrics,
+                "suggestions": improvement_suggestions
             },
             sender=self.agent_id,
             recipient=message.sender
         )
     
     def _calculate_quality_score(self, content: str, analysis_data: Dict[str, Any]) -> float:
-        # Simple quality scoring
+        """Calculate comprehensive quality score"""
+        total_score = 0.0
+        max_score = 100.0
+        
+        # Content structure (25 points)
+        headers = content.count("## ") + content.count("### ")
+        total_score += min(headers * 5, 25)
+        
+        # Code examples (20 points)
+        code_blocks = content.count("```")
+        total_score += min(code_blocks * 5, 20)
+        
+        # Content depth (20 points)
         word_count = len(content.split())
-        has_examples = "```" in content
-        has_sections = "##" in content
+        if word_count >= 1000:
+            total_score += 20
+        elif word_count >= 500:
+            total_score += 15
+        elif word_count >= 200:
+            total_score += 10
         
-        score = 0.5  # Base score
-        if word_count > 100:
-            score += 0.2
-        if has_examples:
-            score += 0.2
-        if has_sections:
-            score += 0.1
+        # Technical accuracy (15 points)
+        tech_terms = ['class', 'function', 'method', 'api', 'endpoint', 'parameter', 'return', 'import']
+        tech_count = sum(1 for term in tech_terms if term in content.lower())
+        total_score += min(tech_count * 2, 15)
         
-        return min(score, 1.0)
+        # Examples and usage (10 points)
+        examples = content.lower().count('example') + content.lower().count('usage')
+        total_score += min(examples * 3, 10)
+        
+        # Documentation completeness (10 points)
+        sections = ['installation', 'usage', 'api', 'example', 'overview', 'getting started']
+        section_count = sum(1 for section in sections if section in content.lower())
+        total_score += min(section_count * 2, 10)
+        
+        return min(total_score / max_score, 1.0)
+    
+    def _analyze_detailed_metrics(self, content: str, analysis_data: Dict[str, Any]) -> Dict[str, float]:
+        """Analyze detailed quality metrics"""
+        word_count = len(content.split())
+        headers = content.count("## ") + content.count("### ")
+        code_blocks = content.count("```")
+        
+        return {
+            "completeness": min(word_count / 1000, 1.0) * 0.8 + (headers >= 5) * 0.2,
+            "accuracy": min(code_blocks / 5, 1.0) * 0.6 + (content.count('def ') > 0) * 0.4,
+            "readability": (headers >= 3) * 0.4 + (word_count >= 200) * 0.3 + ('example' in content.lower()) * 0.3,
+            "consistency": (headers >= 2) * 0.5 + (code_blocks >= 2) * 0.5
+        }
+    
+    def _generate_improvement_suggestions(self, content: str, metrics: Dict[str, float]) -> List[str]:
+        """Generate specific improvement suggestions"""
+        suggestions = []
+        
+        if metrics['completeness'] < 0.8:
+            suggestions.append("📝 Add more comprehensive content - aim for at least 1000 words")
+            suggestions.append("🏗️ Include more detailed sections such as installation, usage, and API reference")
+        
+        if metrics['accuracy'] < 0.7:
+            suggestions.append("💻 Add more code examples and function definitions")
+            suggestions.append("🔍 Include actual code snippets from your repository")
+        
+        if metrics['readability'] < 0.6:
+            suggestions.append("📚 Improve structure with more clear headings and subheadings")
+            suggestions.append("💡 Add practical examples to illustrate concepts")
+        
+        if metrics['consistency'] < 0.7:
+            suggestions.append("🎯 Maintain consistent formatting throughout the documentation")
+            suggestions.append("🔗 Ensure all code blocks have proper language specification")
+        
+        # Content-specific suggestions
+        if "```python" not in content and "def " in content:
+            suggestions.append("🐍 Specify Python language in code blocks for better syntax highlighting")
+        
+        if content.count("## ") < 3:
+            suggestions.append("📋 Add more section headers to organize content better")
+        
+        if "troubleshooting" not in content.lower():
+            suggestions.append("🔧 Add a troubleshooting section to help users solve common issues")
+        
+        return suggestions[:5]  # Limit to top 5 suggestions
 
 class ContentOrchestratorAgent(BaseAgent):
     """Agent responsible for orchestrating the workflow"""

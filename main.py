@@ -18,6 +18,8 @@ import os
 import uuid
 from datetime import datetime
 import shutil
+import logging
+from pathlib import Path
 
 # Import our agent modules
 from src.agents.base_agent import BaseAgent, Message
@@ -32,6 +34,18 @@ from src.agents.orchestrator import (
 )
 from src.utils.git_utils import clone_repo
 from src.services.github_service import github_service
+from src.services.ai_service import AIService
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Technical Documentation Suite",
@@ -99,6 +113,7 @@ class WorkflowStatus(BaseModel):
     current_agent: Optional[str] = None
     agents: Dict[str, AgentStatus] = {}
     result: Optional[Dict[str, Any]] = None
+    ai_powered: bool = False
 
 class FeedbackRequest(BaseModel):
     workflow_id: str
@@ -129,24 +144,21 @@ agents = {
     "feedback_collector": UserFeedbackAgent("feedback_01")
 }
 
-# Add async wrapper to DocumentationWriterAgent
 async def doc_writer_generate_async(agent, analysis_data, target_audience="developers"):
-    msg = Message(
-        type="generate_documentation",
-        data={
-            "analysis": analysis_data, 
-            "format": "markdown",
-            "audience": target_audience
-        },
-        sender=agent.agent_id,
-        recipient=agent.agent_id
-    )
-    result = await agent._generate_documentation(msg)
-    return result.data["content"]
+    """Generate documentation asynchronously"""
+    try:
+        return await agent._generate_documentation_async(analysis_data, target_audience)
+    except Exception as e:
+        logger.error(f"Documentation generation failed: {e}")
+        raise
 
-# Add synchronous wrapper to QualityReviewerAgent
 def quality_reviewer_score_sync(agent, content, analysis_data):
-    return agent._calculate_quality_score(content, analysis_data)
+    """Calculate quality score synchronously"""
+    try:
+        return agent._calculate_quality_score(content, analysis_data)
+    except Exception as e:
+        logger.error(f"Quality review failed: {e}")
+        return 0.0
 
 @app.get("/api")
 async def api_info():
@@ -202,19 +214,25 @@ async def get_agents_status():
 
 async def initialize_workflow_agents(workflow_id: str):
     """Initialize agents for a workflow with proper status tracking"""
-    agent_names = ["code_analyzer", "doc_writer", "translation_agent", "diagram_generator", "quality_reviewer", "orchestrator", "feedback_collector"]
-    
-    workflow_agents = {}
-    for agent_name in agent_names:
-        workflow_agents[agent_name] = AgentStatus(
-            agent_id=agent_name,
-            agent_name=agent_name.replace("_", " ").title(),
-            status="idle",
-            progress=0
-        )
-    
-    workflows[workflow_id].agents = workflow_agents
-    agent_execution_queue[workflow_id] = agent_names.copy()
+    try:
+        agent_names = ["code_analyzer", "doc_writer", "translation_agent", "diagram_generator", "quality_reviewer", "orchestrator", "feedback_collector"]
+        
+        workflow_agents = {}
+        for agent_name in agent_names:
+            workflow_agents[agent_name] = AgentStatus(
+                agent_id=agent_name,
+                agent_name=agent_name.replace("_", " ").title(),
+                status="idle",
+                progress=0
+            )
+        
+        workflows[workflow_id].agents = workflow_agents
+        agent_execution_queue[workflow_id] = agent_names.copy()
+        logger.info(f"Successfully initialized {len(agent_names)} agents for workflow {workflow_id}")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize agents for workflow {workflow_id}: {e}")
+        raise Exception(f"Agent initialization failed: {str(e)}")
 
 async def execute_next_agent(workflow_id: str):
     """Execute the next agent in the queue and update status"""
@@ -322,139 +340,154 @@ The system uses a multi-agent approach with specialized agents for different tas
 @app.post("/generate")
 async def generate_documentation(request: DocumentationRequest):
     """
-    Generate technical documentation for a repository using multi-agent system
+    Generate comprehensive technical documentation for a GitHub repository
     """
+    workflow_id = str(uuid.uuid4())
+    
+    # Initialize workflow_id in workflows dict early to prevent KeyError
+    workflows[workflow_id] = WorkflowStatus(
+        workflow_id=workflow_id,
+        status="initiated",
+        progress=0,
+        message="Initializing documentation generation workflow",
+        created_at=datetime.now(),
+        agents={}
+    )
+    
+    # Check if we should use real AI analysis
+    use_real_analysis = os.getenv('GEMINI_API_KEY') is not None
+    
     try:
-        # Create workflow
-        workflow_id = str(uuid.uuid4())
-        workflow = WorkflowStatus(
-            workflow_id=workflow_id,
-            status="initiated",
-            progress=0,
-            message="Initializing documentation generation",
-            created_at=datetime.now()
-        )
-        workflows[workflow_id] = workflow
-        
-        # Initialize agents for this workflow
+        # Initialize workflow agents
         await initialize_workflow_agents(workflow_id)
         
-        # Update status to processing
+        # Update status to processing and mark if AI-powered
         workflows[workflow_id].status = "processing"
-        workflows[workflow_id].progress = 10
-        workflows[workflow_id].message = "Starting multi-agent workflow"
+        workflows[workflow_id].progress = 5
+        workflows[workflow_id].message = "Workflow initialized, starting documentation generation"
+        
+        # Add ai_powered flag to workflow for status endpoint logic
+        workflows[workflow_id].ai_powered = use_real_analysis
 
-        # Check if we should use real repo analysis or demo mode
-        use_real_analysis = os.getenv('GEMINI_API_KEY') is not None
-        
-        print(f"🔍 API Key present: {use_real_analysis}")
-        print(f"🔍 GEMINI_API_KEY value: {'SET' if os.getenv('GEMINI_API_KEY') else 'NOT SET'}")
-        
+        # Check if we should use real AI analysis
         if use_real_analysis:
+            logger.info("Starting AI-powered documentation generation")
+            
+            # Repository cloning with proper error handling
             try:
-                # Initialize AI workflow with proper agent tracking
-                workflows[workflow_id].message = "Initializing AI-powered analysis"
-                workflows[workflow_id].current_agent = "code_analyzer"
+                repo_path = f"/tmp/repo_{workflow_id}"
+                clone_cmd = f"git clone {request.repository_url} {repo_path}"
                 
-                # Update agent status
+                if request.github_token and request.github_username:
+                    logger.info("Using GitHub authentication for private repository access")
+                    # Handle private repos
+                    auth_url = request.repository_url.replace(
+                        "https://github.com/", 
+                        f"https://{request.github_username}:{request.github_token}@github.com/"
+                    )
+                    clone_cmd = f"git clone {auth_url} {repo_path}"
+                
+                exit_code = os.system(clone_cmd)
+                if exit_code != 0:
+                    raise Exception(f"Failed to clone repository: {request.repository_url}")
+                    
+                logger.info(f"Repository cloned successfully")
+                
+            except Exception as e:
+                logger.error(f"Repository cloning failed: {e}")
+                raise HTTPException(status_code=400, detail=f"Failed to clone repository: {str(e)}")
+
+            try:
+                # Update workflow status for AI processing
+                workflows[workflow_id].status = "processing"
+                workflows[workflow_id].progress = 20
+                workflows[workflow_id].message = "Analyzing repository structure"
+                
+                # Start with code analyzer
+                workflows[workflow_id].current_agent = "code_analyzer"
                 if "code_analyzer" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["code_analyzer"].status = "active"
                     workflows[workflow_id].agents["code_analyzer"].started_at = datetime.now()
-                    workflows[workflow_id].agents["code_analyzer"].current_task = "Cloning repository"
+                    workflows[workflow_id].agents["code_analyzer"].current_task = "Analyzing repository"
                 
-                # 1. Clone the repository
-                workflows[workflow_id].progress = 20
-                workflows[workflow_id].message = "Cloning repository"
-                print(f"🔍 Attempting to clone: {request.repository_url}")
+                logger.info("🔄 Current Agent: code_analyzer (1/7) - Repository Analysis")
                 
-                # Check if GitHub authentication is provided for private repos
-                if request.github_token:
-                    print("🔐 Using GitHub authentication for private repository access")
-                    repo_path = clone_repo(
-                        request.repository_url, 
-                        github_token=request.github_token,
-                        github_username=request.github_username
-                    )
-                else:
-                    repo_path = clone_repo(request.repository_url)
-                    
-                print(f"✅ Repository cloned to: {repo_path}")
-                
-                # Update agent status
-                if "code_analyzer" in workflows[workflow_id].agents:
-                    workflows[workflow_id].agents["code_analyzer"].current_task = "Analyzing code structure"
-                
-                # 2. Analyze the repository with real code analysis
-                workflows[workflow_id].progress = 40
-                workflows[workflow_id].message = "Analyzing code structure"
-                print("🔍 Starting code analysis...")
                 code_analysis = agents["code_analyzer"].analyze_repository(repo_path)
-                print(f"✅ Code analysis complete: {len(code_analysis.get('functions', []))} functions, {len(code_analysis.get('classes', []))} classes")
                 
-                # Add request data to analysis
+                # Add request metadata to analysis data for documentation generation
                 code_analysis["repository_url"] = request.repository_url
                 code_analysis["project_id"] = request.project_id
                 
-                # Complete code analyzer, start doc writer
+                logger.info(f"Code analysis complete: {len(code_analysis.get('functions', []))} functions, {len(code_analysis.get('classes', []))} classes")
+
+                # Update workflow status
                 if "code_analyzer" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["code_analyzer"].status = "completed"
                     workflows[workflow_id].agents["code_analyzer"].progress = 100
                     workflows[workflow_id].agents["code_analyzer"].completed_at = datetime.now()
-                
+
                 workflows[workflow_id].current_agent = "doc_writer"
                 if "doc_writer" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["doc_writer"].status = "active"
                     workflows[workflow_id].agents["doc_writer"].started_at = datetime.now()
-                    workflows[workflow_id].agents["doc_writer"].current_task = "Generating AI documentation"
+                    workflows[workflow_id].agents["doc_writer"].current_task = "Generating documentation"
                 
-                # 3. Generate documentation using AI
+                logger.info("🔄 Current Agent: doc_writer (2/7) - Documentation Generation")
+
+                # Documentation generation
                 workflows[workflow_id].progress = 60
-                workflows[workflow_id].message = "Generating AI-powered documentation"
-                print(f"🔍 Starting AI documentation generation...")
+                workflows[workflow_id].message = "Generating comprehensive documentation using AI"
+                logger.info("Starting AI documentation generation")
+                
                 documentation = await doc_writer_generate_async(
                     agents["doc_writer"], 
                     code_analysis, 
                     request.target_audience
                 )
-                print(f"✅ Documentation generated: {len(documentation)} characters")
                 
+                logger.info(f"Documentation generated: {len(documentation)} characters")
+
                 # Complete doc writer, start diagram generator
                 if "doc_writer" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["doc_writer"].status = "completed"
                     workflows[workflow_id].agents["doc_writer"].progress = 100
                     workflows[workflow_id].agents["doc_writer"].completed_at = datetime.now()
-                
+
                 workflows[workflow_id].current_agent = "diagram_generator"
                 if "diagram_generator" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["diagram_generator"].status = "active"
                     workflows[workflow_id].agents["diagram_generator"].started_at = datetime.now()
                     workflows[workflow_id].agents["diagram_generator"].current_task = "Creating diagrams"
                 
-                # 4. Generate diagrams
+                logger.info("🔄 Current Agent: diagram_generator (3/7) - Diagram Creation")
+            
+                # Generate diagrams
                 workflows[workflow_id].progress = 80
                 workflows[workflow_id].message = "Creating architectural diagrams"
-                print("🔍 Generating diagrams...")
+                logger.info("Generating diagrams")
+                
                 diagrams = agents["diagram_generator"]._generate_architecture_diagram(code_analysis)
-                print("✅ Diagrams generated")
+                logger.info("Diagrams generated successfully")
                 
                 # Complete diagram generator, start translation agent
                 if "diagram_generator" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["diagram_generator"].status = "completed"
                     workflows[workflow_id].agents["diagram_generator"].progress = 100
                     workflows[workflow_id].agents["diagram_generator"].completed_at = datetime.now()
-                
+
                 workflows[workflow_id].current_agent = "translation_agent"
                 if "translation_agent" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["translation_agent"].status = "active"
                     workflows[workflow_id].agents["translation_agent"].started_at = datetime.now()
                     workflows[workflow_id].agents["translation_agent"].current_task = "Generating translations"
-                
-                # 5. Generate translations
+
+                logger.info("🔄 Current Agent: translation_agent (4/7) - Translation")
+
+                # Generate translations
                 workflows[workflow_id].progress = 85
                 workflows[workflow_id].message = "Generating translations"
-                print("🔍 Generating translations...")
+                logger.info("Generating translations")
                 
-                # Generate translations to all supported languages
                 translations = {}
                 translation_agent = agents["translation_agent"]
                 supported_languages = list(translation_agent.supported_languages.keys())
@@ -471,43 +504,47 @@ async def generate_documentation(request: DocumentationRequest):
                             "language": translation_agent.supported_languages[lang_key]
                         }
                     except Exception as e:
-                        print(f"⚠️ Translation to {lang_key} failed: {e}")
+                        logger.warning(f"Translation to {lang_key} failed: {e}")
                         translations[lang_key] = {
                             "content": f"Translation to {translation_agent.supported_languages[lang_key]['name']} failed. Original content:\n\n{documentation}",
                             "language": translation_agent.supported_languages[lang_key]
                         }
-                
-                print(f"✅ Translations generated for {len(translations)} languages")
-                
+
+                logger.info(f"Translations generated for {len(translations)} languages")
+
                 # Complete translation agent, start quality reviewer  
                 if "translation_agent" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["translation_agent"].status = "completed"
                     workflows[workflow_id].agents["translation_agent"].progress = 100
                     workflows[workflow_id].agents["translation_agent"].completed_at = datetime.now()
-                
+
                 workflows[workflow_id].current_agent = "quality_reviewer"
                 if "quality_reviewer" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["quality_reviewer"].status = "active"
                     workflows[workflow_id].agents["quality_reviewer"].started_at = datetime.now()
                     workflows[workflow_id].agents["quality_reviewer"].current_task = "Reviewing quality"
-                
-                # 6. Quality review
+
+                logger.info("🔄 Current Agent: quality_reviewer (5/7) - Quality Review")
+
+                # Quality review
                 workflows[workflow_id].progress = 95
                 workflows[workflow_id].message = "Reviewing documentation quality"
-                print("🔍 Starting quality review...")
-                quality = quality_reviewer_score_sync(agents["quality_reviewer"], documentation, code_analysis)
-                print(f"✅ Quality review complete: {quality}")
+                logger.info("Starting quality review")
                 
+                quality = quality_reviewer_score_sync(agents["quality_reviewer"], documentation, code_analysis)
+                logger.info(f"Quality review complete: {quality}")
+
                 # Complete quality reviewer
                 if "quality_reviewer" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["quality_reviewer"].status = "completed"
                     workflows[workflow_id].agents["quality_reviewer"].progress = 100
                     workflows[workflow_id].agents["quality_reviewer"].completed_at = datetime.now()
-                
-                # Clean up
-                shutil.rmtree(repo_path)
-                print("✅ Cleanup complete")
-                
+
+                # Cleanup
+                if os.path.exists(repo_path):
+                    shutil.rmtree(repo_path)
+                logger.info("Repository cleanup completed")
+
                 # Store real results
                 workflows[workflow_id].status = "completed"
                 workflows[workflow_id].progress = 100
@@ -522,13 +559,13 @@ async def generate_documentation(request: DocumentationRequest):
                     "analysis": code_analysis,
                     "ai_generated": True
                 }
-                
-                print("🎉 Real AI workflow completed successfully!")
+
+                logger.info("Real AI workflow completed successfully")
                 
             except Exception as e:
                 # If real analysis fails, show the error and fall back to demo mode
                 error_msg = str(e)
-                print(f"❌ Real analysis failed: {error_msg}")
+                logger.error(f"Real analysis failed: {error_msg}")
                 workflows[workflow_id].message = f"AI analysis failed ({error_msg}), switching to demo mode"
                 workflows[workflow_id].progress = 15
                 
@@ -537,7 +574,7 @@ async def generate_documentation(request: DocumentationRequest):
                 await execute_next_agent(workflow_id)
         else:
             # Demo mode - simulate workflow
-            print("🎭 Running in demo mode - GEMINI_API_KEY not set")
+            logger.info("Running in demo mode - GEMINI_API_KEY not set")
             workflows[workflow_id].message = "Running in demo mode (set GEMINI_API_KEY for real AI generation)"
             await execute_next_agent(workflow_id)
 
@@ -553,11 +590,12 @@ async def generate_documentation(request: DocumentationRequest):
         }
     except Exception as e:
         # Update workflow status on error
+        error_message = str(e)
         if workflow_id in workflows:
             workflows[workflow_id].status = "failed"
-            workflows[workflow_id].message = f"Generation failed: {str(e)}"
-        print(f"❌ Generation failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed: {str(e)}")
+            workflows[workflow_id].message = f"Generation failed: {error_message}"
+        logger.error(f"Generation failed for workflow {workflow_id}: {error_message}")
+        raise HTTPException(status_code=500, detail=f"Failed: {error_message}")
 
 @app.get("/status/{workflow_id}")
 async def get_workflow_status(workflow_id: str):
@@ -569,9 +607,13 @@ async def get_workflow_status(workflow_id: str):
     
     workflow = workflows[workflow_id]
     
-    # Auto-advance agents if still processing
-    if workflow.status == "processing" and workflow_id in agent_execution_queue:
-        # Simulate agent processing time - advance every 3 seconds
+    # Only auto-advance agents for demo mode workflows (not real AI workflows)
+    # Real AI workflows manage their own progression
+    if (workflow.status == "processing" and 
+        workflow_id in agent_execution_queue and 
+        not getattr(workflow, 'ai_powered', False)):
+        
+        # Simulate agent processing time - advance every 3 seconds (demo mode only)
         current_time = datetime.now()
         if workflow.current_agent:
             agent_start_time = workflow.agents[workflow.current_agent].started_at
@@ -900,17 +942,12 @@ async def serve_frontend(path: str):
 
 if __name__ == "__main__":
     # Get port from environment variable (for Cloud Run)
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.getenv("PORT", 8080))
     
-    print("🚀 Starting Technical Documentation Suite API")
-    print(f"📋 Version: 1.0.0")
-    print(f"🌐 Port: {port}")
-    print(f"🏆 Built for: Google Cloud ADK Hackathon")
+    # Startup logging
+    logger.info("🚀 Starting Technical Documentation Suite API")
+    logger.info(f"📋 Version: 1.0.0")
+    logger.info(f"🌐 Port: {port}")
+    logger.info(f"🏆 Built for: Google Cloud ADK Hackathon")
     
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=port,
-        reload=False,  # Set to True for development
-        log_level="info"
-    ) 
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info") 

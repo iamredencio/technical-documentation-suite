@@ -165,7 +165,7 @@ class AIService:
         dependencies = analysis_data.get('dependencies', [])
         
         prompt = f"""
-        Generate comprehensive technical documentation for this software project:
+        Generate comprehensive technical documentation for this software project using proper markdown formatting with excellent spacing and readability:
         
         **Project Information:**
         - Name: {project_id}
@@ -185,21 +185,45 @@ class AIService:
         **Key Classes:**
         {self._format_classes_for_prompt(classes[:10])}  # Limit to top 10
         
-        Generate a complete documentation that includes:
+        **CRITICAL FORMATTING REQUIREMENTS:**
+        - Use proper markdown headers (# ## ### ####)
+        - Add TWO blank lines between major sections
+        - Add ONE blank line between subsections and paragraphs
+        - Use code blocks with language specification ```python, ```bash, etc.
+        - Include bullet points and numbered lists where appropriate
+        - Add horizontal rules (---) to separate major sections
+        - Use **bold** and *italic* for emphasis appropriately
+        - Include tables for structured data when applicable
+        - Ensure proper spacing around code blocks
+        - Use proper indentation for nested lists
+        
+        Generate a complete, well-formatted documentation that includes:
         
         1. **Project Overview** - Clear description of what the project does
-        2. **Installation & Setup** - How to install and configure
-        3. **Architecture** - High-level system design and components
-        4. **API Reference** - If applicable, document main interfaces
-        5. **Usage Examples** - Practical code examples
-        6. **Key Functions & Classes** - Document important code elements
-        7. **Dependencies** - Required packages and their purposes
-        8. **Contributing** - How others can contribute to the project
         
-        Write professional, clear documentation in Markdown format.
+        2. **Installation & Setup** - Step-by-step installation instructions
+        
+        3. **Architecture Overview** - High-level system design and components
+        
+        4. **API Reference** - If applicable, document main interfaces with examples
+        
+        5. **Usage Examples** - Practical code examples with proper formatting
+        
+        6. **Key Functions & Classes** - Document important code elements with descriptions
+        
+        7. **Dependencies** - Required packages and their purposes
+        
+        8. **Configuration** - Environment variables and settings
+        
+        9. **Contributing** - How others can contribute to the project
+        
+        10. **Troubleshooting** - Common issues and solutions
+        
+        Write professional, clear documentation in Markdown format with excellent spacing and readability.
         Make it suitable for {target_audience}.
-        Be comprehensive but concise.
-        Include code examples where helpful.
+        Be comprehensive but well-organized.
+        Include practical code examples with proper syntax highlighting.
+        Ensure every section has proper spacing and is easy to read.
         """
         
         return prompt

@@ -41,36 +41,198 @@ class DiagramGeneratorAgent(BaseAgent):
             recipient=message.sender
         )
     
-    def _generate_architecture_diagram(self, analysis_data: Dict[str, Any]) -> str:
-        return """graph TB
-    subgraph "Application Layer"
-        API[FastAPI Application]
-        AGENTS[Multi-Agent System]
-    end
+    def _generate_architecture_diagram(self, analysis_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Generate repository-specific diagrams based on code analysis"""
+        diagrams = []
+        
+        # 1. Project Structure Diagram
+        if analysis_data.get('file_count', 0) > 0:
+            structure_diagram = self._generate_project_structure_diagram(analysis_data)
+            diagrams.append({
+                "type": "architecture",
+                "title": f"{analysis_data.get('project_id', 'Project')} Structure",
+                "content": structure_diagram
+            })
+        
+        # 2. Class Hierarchy Diagram (if classes exist)
+        if analysis_data.get('classes', []):
+            class_diagram = self._generate_repository_class_diagram(analysis_data)
+            diagrams.append({
+                "type": "class",
+                "title": "Class Hierarchy",
+                "content": class_diagram
+            })
+        
+        # 3. API Flow Diagram (if API endpoints exist)
+        if analysis_data.get('api_endpoints', []):
+            api_diagram = self._generate_api_flow_diagram(analysis_data)
+            diagrams.append({
+                "type": "flow",
+                "title": "API Flow",
+                "content": api_diagram
+            })
+        
+        # 4. Dependencies Diagram
+        if analysis_data.get('dependencies', []):
+            deps_diagram = self._generate_dependencies_diagram(analysis_data)
+            diagrams.append({
+                "type": "graph",
+                "title": "Dependencies",
+                "content": deps_diagram
+            })
+        
+        # If no specific diagrams, create a general project overview
+        if not diagrams:
+            overview_diagram = self._generate_project_overview_diagram(analysis_data)
+            diagrams.append({
+                "type": "architecture",
+                "title": "Project Overview",
+                "content": overview_diagram
+            })
+        
+        return diagrams
     
-    subgraph "Agent Layer"
-        CA[Code Analyzer]
-        DW[Doc Writer]
-        DG[Diagram Generator]
-        QR[Quality Reviewer]
-        CO[Content Orchestrator]
-        UF[User Feedback]
-    end
+    def _generate_project_structure_diagram(self, analysis_data: Dict[str, Any]) -> str:
+        """Generate project structure diagram"""
+        project_name = analysis_data.get('project_id', 'Project').replace(' ', '_').replace('-', '_')
+        functions = analysis_data.get('functions', [])[:8]  # Limit to 8 functions
+        classes = analysis_data.get('classes', [])[:6]  # Limit to 6 classes
+        
+        diagram = f"graph TD\n    A[{project_name}] --> B[Source_Code]\n"
+        
+        # Add classes
+        if classes:
+            diagram += "    B --> C[Classes]\n"
+            for i, cls in enumerate(classes):
+                if isinstance(cls, dict):
+                    class_name = cls.get('name', f'Class{i+1}').replace(' ', '_').replace('-', '_')
+                else:
+                    class_name = str(cls).replace(' ', '_').replace('-', '_')
+                diagram += f"    C --> C{i+1}[{class_name}]\n"
+        
+        # Add functions
+        if functions:
+            diagram += "    B --> F[Functions]\n"
+            for i, func in enumerate(functions):
+                if isinstance(func, dict):
+                    func_name = func.get('name', f'function{i+1}').replace(' ', '_').replace('-', '_')
+                else:
+                    func_name = str(func).replace(' ', '_').replace('-', '_')
+                diagram += f"    F --> F{i+1}[{func_name}]\n"
+        
+        # Add dependencies
+        dependencies = analysis_data.get('dependencies', [])[:5]
+        if dependencies:
+            diagram += "    A --> D[Dependencies]\n"
+            for i, dep in enumerate(dependencies):
+                if isinstance(dep, dict):
+                    dep_name = dep.get('name', f'dep{i+1}').replace(' ', '_').replace('-', '_')
+                else:
+                    dep_name = str(dep).replace(' ', '_').replace('-', '_')
+                diagram += f"    D --> D{i+1}[{dep_name}]\n"
+        
+        return diagram
     
-    subgraph "Storage Layer"
-        GCS[Google Cloud Storage]
-        BQ[BigQuery]
-    end
+    def _generate_repository_class_diagram(self, analysis_data: Dict[str, Any]) -> str:
+        """Generate class hierarchy diagram for the actual repository"""
+        classes = analysis_data.get('classes', [])[:8]  # Limit to 8 classes
+        diagram = "classDiagram\n"
+        
+        for cls in classes:
+            if isinstance(cls, dict):
+                class_name = cls.get('name', 'UnknownClass').replace(' ', '_').replace('-', '_')
+                methods = cls.get('methods', [])[:5]  # Limit to 5 methods per class
+                
+                diagram += f"    class {class_name} {{\n"
+                for method in methods:
+                    if isinstance(method, dict):
+                        method_name = method.get('name', 'method').replace(' ', '_').replace('-', '_')
+                    else:
+                        method_name = str(method).replace(' ', '_').replace('-', '_')
+                    diagram += f"        +{method_name}()\n"
+                diagram += "    }\n"
+                
+                # Add inheritance if available
+                inheritance = cls.get('inheritance', [])
+                for parent in inheritance:
+                    parent_name = str(parent).replace(' ', '_').replace('-', '_')
+                    diagram += f"    {parent_name} <|-- {class_name}\n"
+            else:
+                class_name = str(cls).replace(' ', '_').replace('-', '_')
+                diagram += f"    class {class_name} {{\n    }}\n"
+        
+        return diagram
     
-    API --> AGENTS
-    AGENTS --> CA
-    AGENTS --> DW
-    AGENTS --> DG
-    AGENTS --> QR
-    AGENTS --> CO
-    AGENTS --> UF
-    CA --> GCS
-    UF --> BQ"""
+    def _generate_api_flow_diagram(self, analysis_data: Dict[str, Any]) -> str:
+        """Generate API flow diagram"""
+        endpoints = analysis_data.get('api_endpoints', [])[:6]  # Limit to 6 endpoints
+        diagram = "sequenceDiagram\n    participant Client\n    participant API\n    participant Handler\n\n"
+        
+        for endpoint in endpoints:
+            if isinstance(endpoint, dict):
+                method = endpoint.get('method', 'GET')
+                path = endpoint.get('path', '/endpoint')
+                function = endpoint.get('function', 'handler')
+            else:
+                method = 'GET'
+                path = str(endpoint)
+                function = 'handler'
+            
+            diagram += f"    Client->>API: {method} {path}\n"
+            diagram += f"    API->>Handler: {function}()\n"
+            diagram += f"    Handler->>API: Response\n"
+            diagram += f"    API->>Client: JSON Response\n"
+        
+        return diagram
+    
+    def _generate_dependencies_diagram(self, analysis_data: Dict[str, Any]) -> str:
+        """Generate dependencies diagram"""
+        dependencies = analysis_data.get('dependencies', [])[:8]  # Limit to 8 dependencies
+        project_name = analysis_data.get('project_id', 'Project').replace(' ', '_').replace('-', '_')
+        
+        diagram = f"graph LR\n    A[{project_name}] --> B[Runtime_Deps]\n    A --> C[Dev_Deps]\n\n"
+        
+        runtime_deps = [d for d in dependencies if isinstance(d, dict) and d.get('type') == 'runtime'][:4]
+        dev_deps = [d for d in dependencies if isinstance(d, dict) and d.get('type') == 'development'][:4]
+        
+        # If no categorized dependencies, use first 4 as runtime deps
+        if not runtime_deps and not dev_deps:
+            runtime_deps = dependencies[:4]
+        
+        for i, dep in enumerate(runtime_deps):
+            if isinstance(dep, dict):
+                dep_name = dep.get('name', f'runtime_dep_{i+1}').replace(' ', '_').replace('-', '_')
+            else:
+                dep_name = str(dep).replace(' ', '_').replace('-', '_')
+            diagram += f"    B --> R{i+1}[{dep_name}]\n"
+        
+        for i, dep in enumerate(dev_deps):
+            if isinstance(dep, dict):
+                dep_name = dep.get('name', f'dev_dep_{i+1}').replace(' ', '_').replace('-', '_')
+            else:
+                dep_name = str(dep).replace(' ', '_').replace('-', '_')
+            diagram += f"    C --> D{i+1}[{dep_name}]\n"
+        
+        return diagram
+    
+    def _generate_project_overview_diagram(self, analysis_data: Dict[str, Any]) -> str:
+        """Generate general project overview diagram"""
+        project_name = analysis_data.get('project_id', 'Project').replace(' ', '_').replace('-', '_')
+        file_count = analysis_data.get('file_count', 0)
+        func_count = len(analysis_data.get('functions', []))
+        class_count = len(analysis_data.get('classes', []))
+        
+        return f"""graph TD
+    A[{project_name}] --> B[Code_Base]
+    B --> C[{file_count}_Files]
+    B --> D[{func_count}_Functions]
+    B --> E[{class_count}_Classes]
+    
+    A --> F[Repository]
+    F --> G[Source_Code]
+    
+    A --> H[Statistics]
+    H --> I[{analysis_data.get('lines_of_code', 0)}_Lines_of_Code]"""
     
     def _generate_class_diagram(self, analysis_data: Dict[str, Any]) -> str:
         return """classDiagram

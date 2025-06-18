@@ -48,8 +48,25 @@ async def test_individual_agents():
     except Exception as e:
         print(f"❌ Documentation Writer Agent failed: {e}")
     
-    # Test 3: Diagram Generator Agent
-    print("\n3️⃣ Testing Diagram Generator Agent...")
+    # Test 3: Translation Agent
+    print("\n3️⃣ Testing Translation Agent...")
+    try:
+        translation_agent = agents["translation_agent"]
+        print("✅ Translation Agent initialized successfully")
+        print(f"✅ Agent ID: {translation_agent.agent_id}")
+        print(f"✅ Agent Name: {translation_agent.name}")
+        print(f"✅ Supported Languages: {list(translation_agent.supported_languages.keys())}")
+        print(f"✅ Language Details: {translation_agent.supported_languages}")
+        
+        # Test health check
+        health = await translation_agent.health_check()
+        print(f"✅ Health Check: {'Healthy' if health else 'Unhealthy'}")
+        
+    except Exception as e:
+        print(f"❌ Translation Agent failed: {e}")
+    
+    # Test 4: Diagram Generator Agent
+    print("\n4️⃣ Testing Diagram Generator Agent...")
     try:
         diagram_gen = agents["diagram_generator"]
         print("✅ Diagram Generator Agent initialized successfully")
@@ -64,8 +81,8 @@ async def test_individual_agents():
     except Exception as e:
         print(f"❌ Diagram Generator Agent failed: {e}")
     
-    # Test 4: Quality Reviewer Agent
-    print("\n4️⃣ Testing Quality Reviewer Agent...")
+    # Test 5: Quality Reviewer Agent
+    print("\n5️⃣ Testing Quality Reviewer Agent...")
     try:
         quality_reviewer = agents["quality_reviewer"]
         print("✅ Quality Reviewer Agent initialized successfully")
@@ -80,8 +97,8 @@ async def test_individual_agents():
     except Exception as e:
         print(f"❌ Quality Reviewer Agent failed: {e}")
     
-    # Test 5: Content Orchestrator Agent
-    print("\n5️⃣ Testing Content Orchestrator Agent...")
+    # Test 6: Content Orchestrator Agent
+    print("\n6️⃣ Testing Content Orchestrator Agent...")
     try:
         orchestrator = agents["orchestrator"]
         print("✅ Content Orchestrator Agent initialized successfully")
@@ -97,8 +114,8 @@ async def test_individual_agents():
     except Exception as e:
         print(f"❌ Content Orchestrator Agent failed: {e}")
     
-    # Test 6: User Feedback Agent
-    print("\n6️⃣ Testing User Feedback Agent...")
+    # Test 7: User Feedback Agent
+    print("\n7️⃣ Testing User Feedback Agent...")
     try:
         feedback_agent = agents["feedback_collector"]
         print("✅ User Feedback Agent initialized successfully")
@@ -114,6 +131,7 @@ async def test_individual_agents():
         print(f"❌ User Feedback Agent failed: {e}")
     
     print("\n🎉 Individual agent testing complete!")
+    print(f"📊 Total agents tested: 7")
 
 async def test_agent_communication():
     """Test basic agent-to-agent communication"""

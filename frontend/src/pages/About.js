@@ -42,7 +42,7 @@ const About = () => {
     {
       icon: Zap,
       title: 'Lightning Fast',
-      description: 'Parallel processing with 6 specialized agents working simultaneously to generate documentation quickly.'
+      description: 'Parallel processing with 7 specialized agents working simultaneously to generate documentation quickly.'
     },
     {
       icon: Cloud,
@@ -58,7 +58,7 @@ const About = () => {
 
   const achievements = [
     { icon: Trophy, title: 'Google Cloud ADK Hackathon 2024', description: 'Built for innovation competition' },
-    { icon: Code, title: '6 Specialized Agents', description: 'Multi-agent architecture for comprehensive analysis' },
+    { icon: Code, title: '7 Specialized Agents', description: 'Multi-agent architecture for comprehensive analysis' },
     { icon: Rocket, title: '95% Test Coverage', description: 'Comprehensive testing and quality assurance' },
     { icon: Award, title: 'Enterprise Ready', description: 'Scalable, secure, and production-ready solution' }
   ];

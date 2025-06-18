@@ -6,7 +6,7 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 seconds timeout
+  timeout: 120000, // 2 minutes timeout for documentation generation
   headers: {
     'Content-Type': 'application/json',
   },
@@ -49,7 +49,9 @@ export const endpoints = {
   status: (workflowId) => `/status/${workflowId}`,
   feedback: '/feedback',
   agentsStatus: '/agents/status',
-  workflows: '/workflows'
+  workflows: '/workflows',
+  translationLanguages: '/translation/languages',
+  translate: '/translation/translate'
 };
 
 // API functions
@@ -57,8 +59,8 @@ export const apiService = {
   // Health check
   healthCheck: () => api.get(endpoints.health),
   
-  // Generate documentation
-  generateDocumentation: (data) => api.post(endpoints.generate, data),
+  // Generate documentation (with extended timeout)
+  generateDocumentation: (data) => api.post(endpoints.generate, data, { timeout: 300000 }), // 5 minutes
   
   // Get workflow status
   getWorkflowStatus: (workflowId) => api.get(endpoints.status(workflowId)),
@@ -70,7 +72,11 @@ export const apiService = {
   getAgentsStatus: () => api.get(endpoints.agentsStatus),
   
   // Get all workflows
-  getWorkflows: () => api.get(endpoints.workflows)
+  getWorkflows: () => api.get(endpoints.workflows),
+  
+  // Translation services
+  getSupportedLanguages: () => api.get(endpoints.translationLanguages),
+  translateDocumentation: (data) => api.post(endpoints.translate, data)
 };
 
 export default api; 

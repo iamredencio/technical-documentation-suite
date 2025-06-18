@@ -12,7 +12,11 @@ import {
   Bot,
   GitBranch,
   Eye,
-  BarChart3
+  BarChart3,
+  Languages,
+  FileText,
+  Workflow,
+  MessageSquare
 } from 'lucide-react';
 
 const TestPages = () => {
@@ -30,10 +34,16 @@ const TestPages = () => {
       color: 'from-blue-500 to-blue-600',
     },
     {
-      icon: Eye,
+      icon: FileText,
       name: 'Documentation Writer',
       description: 'Generating documentation content',
       color: 'from-green-500 to-green-600',
+    },
+    {
+      icon: Languages,
+      name: 'Translation Agent',
+      description: 'Translating to multiple languages',
+      color: 'from-teal-500 to-teal-600',
     },
     {
       icon: BarChart3,
@@ -48,13 +58,13 @@ const TestPages = () => {
       color: 'from-orange-500 to-orange-600',
     },
     {
-      icon: Bot,
+      icon: Workflow,
       name: 'Content Orchestrator',
       description: 'Orchestrating workflow execution',
       color: 'from-indigo-500 to-indigo-600',
     },
     {
-      icon: Database,
+      icon: MessageSquare,
       name: 'User Feedback',
       description: 'Processing user feedback',
       color: 'from-pink-500 to-pink-600',
@@ -72,7 +82,7 @@ const TestPages = () => {
     {
       id: 'agent-status',
       name: 'Agent Status Check',
-      description: 'Verify all 6 agents are properly initialized',
+      description: 'Verify all 7 agents are properly initialized',
       icon: Bot,
       color: 'from-blue-500 to-blue-600'
     },
@@ -256,6 +266,7 @@ const TestPages = () => {
     const agentStatuses = [
       { name: 'Code Analyzer', status: 'healthy' },
       { name: 'Documentation Writer', status: 'healthy' },
+      { name: 'Translation Agent', status: 'healthy' },
       { name: 'Diagram Generator', status: 'healthy' },
       { name: 'Quality Reviewer', status: 'healthy' },
       { name: 'Content Orchestrator', status: 'healthy' },
@@ -264,7 +275,7 @@ const TestPages = () => {
 
     return {
       success: true,
-      message: 'All 6 agents are operational',
+      message: 'All 7 agents are operational',
       data: { agents: agentStatuses },
       timestamp: new Date().toISOString()
     };
@@ -648,11 +659,12 @@ const TestPages = () => {
             <div className="space-y-3">
               {[
                 { name: 'Code Analyzer', icon: GitBranch, status: 'active' },
-                { name: 'Documentation Writer', icon: Eye, status: 'active' },
+                { name: 'Documentation Writer', icon: FileText, status: 'active' },
+                { name: 'Translation Agent', icon: Languages, status: 'active' },
                 { name: 'Diagram Generator', icon: BarChart3, status: 'active' },
                 { name: 'Quality Reviewer', icon: TestTube, status: 'active' },
-                { name: 'Content Orchestrator', icon: Bot, status: 'active' },
-                { name: 'User Feedback', icon: Database, status: 'active' }
+                { name: 'Content Orchestrator', icon: Workflow, status: 'active' },
+                { name: 'User Feedback', icon: MessageSquare, status: 'active' }
               ].map((agent, index) => {
                 const Icon = agent.icon;
                 return (

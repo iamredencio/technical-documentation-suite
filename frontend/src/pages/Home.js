@@ -14,7 +14,8 @@ import {
   MessageSquare,
   Workflow,
   Database,
-  RefreshCw
+  RefreshCw,
+  Languages
 } from 'lucide-react';
 
 const Home = () => {
@@ -34,6 +35,13 @@ const Home = () => {
       name: 'Documentation Writer',
       description: 'Generates comprehensive documentation in multiple formats',
       color: 'from-green-500 to-green-600',
+      status: 'idle',
+    },
+    {
+      icon: Languages,
+      name: 'Translation Agent',
+      description: 'Translates documentation into multiple languages for global accessibility',
+      color: 'from-teal-500 to-teal-600',
       status: 'idle',
     },
     {
@@ -102,7 +110,7 @@ const Home = () => {
 
     const simulateWorkflow = () => {
       setIsSimulating(true);
-      const sequence = [0, 1, 2, 3, 4, 5]; // Agent activation sequence
+      const sequence = [0, 1, 2, 3, 4, 5, 6]; // Agent activation sequence
       
       sequence.forEach((agentIndex, i) => {
         setTimeout(() => {
@@ -148,6 +156,11 @@ const Home = () => {
       icon: Bot,
       title: 'AI-Powered',
       description: 'Intelligent agents that understand code structure and context',
+    },
+    {
+      icon: Languages,
+      title: 'Multi-Language',
+      description: 'Automatic translation to Spanish, French, German, Japanese, and Portuguese',
     },
     {
       icon: Database,
@@ -255,7 +268,7 @@ const Home = () => {
                 console.error('Error starting real demo:', error);
                 setIsSimulating(false);
                 // Fall back to simulation
-                const sequence = [0, 1, 2, 3, 4, 5];
+                const sequence = [0, 1, 2, 3, 4, 5, 6];
                 sequence.forEach((agentIndex, i) => {
                   setTimeout(() => {
                     setActiveAgent(agentIndex);
@@ -289,7 +302,7 @@ const Home = () => {
         {/* Live Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto mt-12">
           <div className="text-center">
-            <div className="text-3xl font-bold text-blue-600">6</div>
+            <div className="text-3xl font-bold text-blue-600">7</div>
             <div className="text-sm text-gray-600">Specialized Agents</div>
           </div>
           <div className="text-center">
@@ -310,7 +323,7 @@ const Home = () => {
             Powered by Multi-Agent Intelligence
           </h2>
           <p className="text-lg text-gray-600 mt-4 max-w-2xl mx-auto">
-            Six specialized AI agents work together to deliver comprehensive documentation
+            Seven specialized AI agents work together to deliver comprehensive, multilingual documentation
           </p>
         </div>
 
@@ -436,7 +449,7 @@ const Home = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {[
             { step: '1', title: 'Input Repository', desc: 'Provide your GitHub URL or codebase' },
-            { step: '2', title: 'Agent Analysis', desc: 'Our 6 agents analyze your code in parallel' },
+            { step: '2', title: 'Agent Analysis', desc: 'Our 7 agents analyze your code in parallel' },
             { step: '3', title: 'Generate Docs', desc: 'Comprehensive documentation is created' },
             { step: '4', title: 'Review & Export', desc: 'Review quality scores and download' },
           ].map((item, index) => (

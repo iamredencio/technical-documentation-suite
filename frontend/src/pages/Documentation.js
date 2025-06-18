@@ -15,7 +15,8 @@ import {
   BarChart3,
   RefreshCw,
   CheckCircle,
-  XCircle
+  XCircle,
+  Languages
 } from 'lucide-react';
 
 const Documentation = () => {
@@ -24,6 +25,7 @@ const Documentation = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('documentation');
   const [qualityMetrics, setQualityMetrics] = useState(null);
+  const [selectedTranslation, setSelectedTranslation] = useState(null);
 
   useEffect(() => {
     fetchDocumentation();
@@ -56,6 +58,7 @@ const Documentation = () => {
           ai_generated: result.ai_generated || false,
           documentation: {
             content: result.documentation || '# No documentation generated',
+            translations: result.translations || {},
             diagrams: Array.isArray(result.diagrams) ? result.diagrams : 
                      typeof result.diagrams === 'string' ? [{ type: 'architecture', title: 'System Architecture', content: result.diagrams }] : [],
             quality_score: result.quality?.overall_score || 0,
@@ -157,6 +160,27 @@ The system uses a multi-agent approach with specialized agents for different tas
     toast.success(`Downloaded ${filename}`);
   };
 
+  const downloadTranslation = (languageKey) => {
+    if (!documentation.documentation.translations[languageKey]) return;
+    
+    const translation = documentation.documentation.translations[languageKey];
+    const content = translation.content;
+    const languageName = translation.language.name;
+    const filename = `${documentation.project_name}_${languageName}_documentation.md`;
+    
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    toast.success(`Downloaded ${languageName} translation`);
+  };
+
   const shareDocumentation = () => {
     const url = window.location.href;
     navigator.clipboard.writeText(url).then(() => {
@@ -256,6 +280,7 @@ The system uses a multi-agent approach with specialized agents for different tas
           <nav className="flex space-x-8 px-8">
             {[
               { id: 'documentation', name: 'Documentation', icon: FileText },
+              { id: 'translations', name: 'Translations', icon: Languages },
               { id: 'diagrams', name: 'Diagrams', icon: BarChart3 },
               { id: 'quality', name: 'Quality Metrics', icon: Star }
             ].map(tab => {
@@ -308,15 +333,100 @@ The system uses a multi-agent approach with specialized agents for different tas
             </div>
           )}
 
+          {/* Translations Tab */}
+          {activeTab === 'translations' && (
+            <div className="space-y-6">
+              {documentation.documentation.translations && Object.keys(documentation.documentation.translations).length > 0 ? (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Available Translations
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                    {Object.entries(documentation.documentation.translations).map(([langKey, translation]) => (
+                      <div key={langKey} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors cursor-pointer"
+                           onClick={() => setSelectedTranslation(langKey)}>
+                        <div className="flex items-center space-x-3">
+                          <Languages className="h-5 w-5 text-blue-600" />
+                          <div>
+                            <h4 className="font-medium text-gray-900">{translation.language.name}</h4>
+                            <p className="text-sm text-gray-500">{translation.language.native_name}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {selectedTranslation && documentation.documentation.translations[selectedTranslation] && (
+                    <div className="border-t pt-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          {documentation.documentation.translations[selectedTranslation].language.name} Translation
+                        </h3>
+                        <button
+                          onClick={() => downloadTranslation(selectedTranslation)}
+                          className="btn-outline text-sm"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Download
+                        </button>
+                      </div>
+                      <div className="prose prose-lg max-w-none">
+                        <ReactMarkdown
+                          components={{
+                            code({node, inline, className, children, ...props}) {
+                              const match = /language-(\w+)/.exec(className || '');
+                              return !inline && match ? (
+                                <SyntaxHighlighter
+                                  style={oneDark}
+                                  language={match[1]}
+                                  PreTag="div"
+                                  {...props}
+                                >
+                                  {String(children).replace(/\n$/, '')}
+                                </SyntaxHighlighter>
+                              ) : (
+                                <code className={className} {...props}>
+                                  {children}
+                                </code>
+                              );
+                            }
+                          }}
+                        >
+                          {documentation.documentation.translations[selectedTranslation].content}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <Languages className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No translations available for this documentation.</p>
+                  <p className="text-sm mt-2">Translations will be generated when AI features are enabled.</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Diagrams Tab */}
           {activeTab === 'diagrams' && (
             <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                  System Architecture Diagram
-                </h3>
-                <MermaidDiagram chart={documentation.documentation.diagrams} />
-              </div>
+              {documentation.documentation.diagrams && documentation.documentation.diagrams.length > 0 ? (
+                documentation.documentation.diagrams.map((diagram, index) => (
+                  <div key={index}>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      {diagram.title || `Diagram ${index + 1}`}
+                    </h3>
+                    <MermaidDiagram chart={diagram.content} />
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <BarChart3 className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No diagrams available for this documentation.</p>
+                  <p className="text-sm mt-2">Diagrams will be generated when AI features are enabled.</p>
+                </div>
+              )}
             </div>
           )}
 

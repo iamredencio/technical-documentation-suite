@@ -14,7 +14,8 @@ import {
   MessageSquare,
   GitBranch,
   Eye,
-  Workflow
+  Workflow,
+  Languages
 } from 'lucide-react';
 
 const Status = () => {
@@ -43,6 +44,12 @@ const Status = () => {
       name: 'Documentation Writer',
       description: 'Generating comprehensive documentation content',
       color: 'from-green-500 to-green-600',
+    },
+    {
+      icon: Languages,
+      name: 'Translation Agent',
+      description: 'Translating documentation to multiple languages',
+      color: 'from-teal-500 to-teal-600',
     },
     {
       icon: BarChart3,
@@ -86,10 +93,11 @@ const Status = () => {
         const agentMapping = {
           'code_analyzer': 0,
           'doc_writer': 1,
-          'diagram_generator': 2,
-          'quality_reviewer': 3,
-          'orchestrator': 4,
-          'feedback_collector': 5
+          'translation_agent': 2,
+          'diagram_generator': 3,
+          'quality_reviewer': 4,
+          'orchestrator': 5,
+          'feedback_collector': 6
         };
         
         const agentIndex = agentMapping[activeAgentKey];
@@ -305,7 +313,8 @@ const Status = () => {
               // Get real agent status from backend using correct mapping
               const agentMapping = {
                 'Code Analyzer': 'code_analyzer',
-                'Documentation Writer': 'doc_writer', 
+                'Documentation Writer': 'doc_writer',
+                'Translation Agent': 'translation_agent',
                 'Diagram Generator': 'diagram_generator',
                 'Quality Reviewer': 'quality_reviewer',
                 'Content Orchestrator': 'orchestrator',

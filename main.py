@@ -3,6 +3,10 @@ Technical Documentation Suite - Main Application Entry Point
 Built for the Google Cloud ADK Hackathon
 """
 
+from dotenv import load_dotenv
+# Load environment variables from .env file
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +23,7 @@ import shutil
 from src.agents.base_agent import BaseAgent, Message
 from src.agents.code_analyzer import CodeAnalyzerAgent
 from src.agents.doc_writer import DocumentationWriterAgent
+from src.agents.translation_agent import TranslationAgent
 from src.agents.orchestrator import (
     DiagramGeneratorAgent, 
     QualityReviewerAgent, 
@@ -104,6 +109,11 @@ class FeedbackRequest(BaseModel):
     completeness_score: int
     comments: Optional[str] = None
 
+class TranslationRequest(BaseModel):
+    content: str
+    selected_languages: List[str]
+    project_context: Optional[Dict[str, Any]] = None
+
 # In-memory storage for demo (in production, this would be in a database)
 workflows: Dict[str, WorkflowStatus] = {}
 agent_execution_queue: Dict[str, List[str]] = {}  # workflow_id -> list of agent names
@@ -112,6 +122,7 @@ agent_execution_queue: Dict[str, List[str]] = {}  # workflow_id -> list of agent
 agents = {
     "code_analyzer": CodeAnalyzerAgent("code_analyzer_01"),
     "doc_writer": DocumentationWriterAgent("doc_writer_01"),
+    "translation_agent": TranslationAgent("translation_01"),
     "diagram_generator": DiagramGeneratorAgent("diagram_gen_01"),
     "quality_reviewer": QualityReviewerAgent("quality_reviewer_01"),
     "orchestrator": ContentOrchestratorAgent("orchestrator_01"),
@@ -150,6 +161,8 @@ async def api_info():
             "generate": "/generate",
             "status": "/status/{workflow_id}",
             "feedback": "/feedback",
+            "translation_languages": "/translation/languages",
+            "translate": "/translation/translate",
             "github_auth": "/auth/github/config",
             "github_token": "/auth/github/token",
             "github_repos": "/github/repositories",
@@ -189,7 +202,7 @@ async def get_agents_status():
 
 async def initialize_workflow_agents(workflow_id: str):
     """Initialize agents for a workflow with proper status tracking"""
-    agent_names = ["code_analyzer", "doc_writer", "diagram_generator", "quality_reviewer", "orchestrator", "feedback_collector"]
+    agent_names = ["code_analyzer", "doc_writer", "translation_agent", "diagram_generator", "quality_reviewer", "orchestrator", "feedback_collector"]
     
     workflow_agents = {}
     for agent_name in agent_names:
@@ -290,7 +303,7 @@ The system uses a multi-agent approach with specialized agents for different tas
     
     # Update workflow status
     workflows[workflow_id].current_agent = next_agent
-    workflows[workflow_id].progress = min(10 + ((6 - len(agent_execution_queue[workflow_id])) * 15), 90)
+    workflows[workflow_id].progress = min(10 + ((7 - len(agent_execution_queue[workflow_id])) * 12), 90)
     workflows[workflow_id].message = f"Agent {next_agent.replace('_', ' ').title()} is processing"
     
     # Update agent status
@@ -424,11 +437,53 @@ async def generate_documentation(request: DocumentationRequest):
                 diagrams = agents["diagram_generator"]._generate_architecture_diagram(code_analysis)
                 print("✅ Diagrams generated")
                 
-                # Complete diagram generator, start quality reviewer
+                # Complete diagram generator, start translation agent
                 if "diagram_generator" in workflows[workflow_id].agents:
                     workflows[workflow_id].agents["diagram_generator"].status = "completed"
                     workflows[workflow_id].agents["diagram_generator"].progress = 100
                     workflows[workflow_id].agents["diagram_generator"].completed_at = datetime.now()
+                
+                workflows[workflow_id].current_agent = "translation_agent"
+                if "translation_agent" in workflows[workflow_id].agents:
+                    workflows[workflow_id].agents["translation_agent"].status = "active"
+                    workflows[workflow_id].agents["translation_agent"].started_at = datetime.now()
+                    workflows[workflow_id].agents["translation_agent"].current_task = "Generating translations"
+                
+                # 5. Generate translations
+                workflows[workflow_id].progress = 85
+                workflows[workflow_id].message = "Generating translations"
+                print("🔍 Generating translations...")
+                
+                # Generate translations to all supported languages
+                translations = {}
+                translation_agent = agents["translation_agent"]
+                supported_languages = list(translation_agent.supported_languages.keys())
+                
+                for lang_key in supported_languages:
+                    try:
+                        translated_content = await translation_agent._perform_translation(
+                            documentation, 
+                            translation_agent.supported_languages[lang_key], 
+                            code_analysis
+                        )
+                        translations[lang_key] = {
+                            "content": translated_content,
+                            "language": translation_agent.supported_languages[lang_key]
+                        }
+                    except Exception as e:
+                        print(f"⚠️ Translation to {lang_key} failed: {e}")
+                        translations[lang_key] = {
+                            "content": f"Translation to {translation_agent.supported_languages[lang_key]['name']} failed. Original content:\n\n{documentation}",
+                            "language": translation_agent.supported_languages[lang_key]
+                        }
+                
+                print(f"✅ Translations generated for {len(translations)} languages")
+                
+                # Complete translation agent, start quality reviewer  
+                if "translation_agent" in workflows[workflow_id].agents:
+                    workflows[workflow_id].agents["translation_agent"].status = "completed"
+                    workflows[workflow_id].agents["translation_agent"].progress = 100
+                    workflows[workflow_id].agents["translation_agent"].completed_at = datetime.now()
                 
                 workflows[workflow_id].current_agent = "quality_reviewer"
                 if "quality_reviewer" in workflows[workflow_id].agents:
@@ -436,8 +491,8 @@ async def generate_documentation(request: DocumentationRequest):
                     workflows[workflow_id].agents["quality_reviewer"].started_at = datetime.now()
                     workflows[workflow_id].agents["quality_reviewer"].current_task = "Reviewing quality"
                 
-                # 5. Quality review
-                workflows[workflow_id].progress = 90
+                # 6. Quality review
+                workflows[workflow_id].progress = 95
                 workflows[workflow_id].message = "Reviewing documentation quality"
                 print("🔍 Starting quality review...")
                 quality = quality_reviewer_score_sync(agents["quality_reviewer"], documentation, code_analysis)
@@ -461,6 +516,7 @@ async def generate_documentation(request: DocumentationRequest):
                 workflows[workflow_id].current_agent = None
                 workflows[workflow_id].result = {
                     "documentation": documentation,
+                    "translations": translations,
                     "diagrams": diagrams,
                     "quality": quality,
                     "analysis": code_analysis,
@@ -589,6 +645,63 @@ async def submit_feedback(feedback: FeedbackRequest):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to submit feedback: {str(e)}")
+
+@app.get("/translation/languages")
+async def get_supported_languages():
+    """Get list of supported languages for translation"""
+    try:
+        translation_agent = agents["translation_agent"]
+        language_options = translation_agent.get_language_selection_options()
+        
+        return {
+            "success": True,
+            "data": {
+                "languages": language_options,
+                "total_count": len(language_options)
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get supported languages: {str(e)}")
+
+@app.post("/translation/translate")
+async def translate_documentation(request: TranslationRequest):
+    """Translate documentation to selected languages"""
+    try:
+        if not request.content:
+            raise HTTPException(status_code=400, detail="Content is required for translation")
+        
+        if not request.selected_languages:
+            raise HTTPException(status_code=400, detail="At least one language must be selected")
+        
+        translation_agent = agents["translation_agent"]
+        
+        # Create message for translation agent
+        translation_message = Message(
+            type="translate_documentation",
+            data={
+                "content": request.content,
+                "languages": request.selected_languages,
+                "project_context": request.project_context or {}
+            },
+            sender="api",
+            recipient=translation_agent.agent_id
+        )
+        
+        # Process translation
+        response = await translation_agent.handle_message(translation_message)
+        
+        if response.type == "translation_error":
+            raise HTTPException(status_code=400, detail=response.data.get("error", "Translation failed"))
+        
+        return {
+            "success": True,
+            "data": response.data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
 
 @app.get("/workflows")
 async def list_workflows():

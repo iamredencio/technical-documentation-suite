@@ -18,7 +18,8 @@ import {
   Workflow,
   CheckCircle,
   Clock,
-  RefreshCw
+  RefreshCw,
+  Languages
 } from 'lucide-react';
 
 const Generate = () => {
@@ -29,12 +30,14 @@ const Generate = () => {
     project_id: '',
     output_formats: ['markdown'],
     include_diagrams: true,
-    target_audience: 'developers'
+    target_audience: 'developers',
+    translation_languages: []
   });
   const [errors, setErrors] = useState({});
   const [activeAgent, setActiveAgent] = useState(-1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentWorkflowId, setCurrentWorkflowId] = useState(null);
+  const [supportedLanguages, setSupportedLanguages] = useState([]);
 
   const agents = [
     {
@@ -48,6 +51,12 @@ const Generate = () => {
       name: 'Documentation Writer',
       description: 'Generates comprehensive documentation using AI in multiple formats',
       color: 'from-green-500 to-green-600',
+    },
+    {
+      icon: Languages,
+      name: 'Translation Agent',
+      description: 'Translates documentation to multiple languages for global accessibility',
+      color: 'from-teal-500 to-teal-600',
     },
     {
       icon: BarChart3,
@@ -132,31 +141,41 @@ const Generate = () => {
   };
 
   const monitorWorkflow = async (workflowId) => {
+    let pollCount = 0;
     const pollInterval = setInterval(async () => {
       try {
+        pollCount++;
         const response = await apiService.getWorkflowStatus(workflowId);
         if (response.data.success) {
           const workflowData = response.data.data;
+          console.log(`🔄 Poll ${pollCount}: Status=${workflowData.status}, Current Agent=${workflowData.current_agent}, Progress=${workflowData.progress}%`);
           
           // Map backend agent to frontend agent index
+          const agentMapping = {
+            'code_analyzer': 0,
+            'doc_writer': 1,
+            'translation_agent': 2,
+            'diagram_generator': 3,
+            'quality_reviewer': 4,
+            'orchestrator': 5,
+            'feedback_collector': 6
+          };
+          
           if (workflowData.current_agent) {
-            const agentMapping = {
-              'code_analyzer': 0,
-              'doc_writer': 1,
-              'diagram_generator': 2,
-              'quality_reviewer': 3,
-              'orchestrator': 4,
-              'feedback_collector': 5
-            };
-            
             const agentIndex = agentMapping[workflowData.current_agent];
             if (agentIndex !== undefined) {
+              console.log(`🎯 Setting active agent to: ${workflowData.current_agent} (index ${agentIndex})`);
               setActiveAgent(agentIndex);
             }
+          } else if (workflowData.status === 'completed' || workflowData.progress === 100) {
+            // If no current agent but status is completed, show all agents as completed
+            console.log('✅ Workflow completed, showing final state');
+            setActiveAgent(6); // Show last agent as completed
           }
           
           // Check if workflow is completed
           if (workflowData.status === 'completed') {
+            console.log('🎉 Workflow completed successfully!');
             clearInterval(pollInterval);
             setIsGenerating(false);
             setActiveAgent(-1);
@@ -167,6 +186,7 @@ const Generate = () => {
               navigate(`/status/${workflowId}`);
             }, 2000);
           } else if (workflowData.status === 'failed') {
+            console.log('❌ Workflow failed');
             clearInterval(pollInterval);
             setIsGenerating(false);
             setActiveAgent(-1);
@@ -176,12 +196,13 @@ const Generate = () => {
       } catch (error) {
         console.error('Error monitoring workflow:', error);
       }
-    }, 2000); // Poll every 2 seconds
+    }, 1000); // Poll every 1 second for faster updates
 
     // Stop polling after 5 minutes max
     setTimeout(() => {
       clearInterval(pollInterval);
       if (isGenerating) {
+        console.log('⏰ Polling timeout reached, navigating to status page');
         navigate(`/status/${workflowId}`);
       }
     }, 300000);
@@ -190,7 +211,7 @@ const Generate = () => {
   const getAgentStatus = (index) => {
     if (!isGenerating) return 'idle';
     if (index === activeAgent) return 'active';
-    if (index < activeAgent) return 'completed';
+    if (index < activeAgent || (activeAgent === -1 && index <= 6)) return 'completed';
     return 'waiting';
   };
 
@@ -200,6 +221,27 @@ const Generate = () => {
       setIsGenerating(false);
       setActiveAgent(-1);
     };
+  }, []);
+
+  // Load supported languages on component mount
+  useEffect(() => {
+    const loadSupportedLanguages = async () => {
+      try {
+        console.log('🔍 Loading supported languages...');
+        const response = await apiService.getSupportedLanguages();
+        console.log('📡 API Response:', response.data);
+        if (response.data.success) {
+          console.log('✅ Languages loaded:', response.data.data.languages);
+          setSupportedLanguages(response.data.data.languages);
+        } else {
+          console.error('❌ API returned success=false');
+        }
+      } catch (error) {
+        console.error('❌ Error loading supported languages:', error);
+      }
+    };
+
+    loadSupportedLanguages();
   }, []);
 
   const handleInputChange = (e) => {
@@ -221,6 +263,15 @@ const Generate = () => {
       output_formats: prev.output_formats.includes(format)
         ? prev.output_formats.filter(f => f !== format)
         : [...prev.output_formats, format]
+    }));
+  };
+
+  const handleLanguageChange = (languageCode) => {
+    setFormData(prev => ({
+      ...prev,
+      translation_languages: prev.translation_languages.includes(languageCode)
+        ? prev.translation_languages.filter(lang => lang !== languageCode)
+        : [...prev.translation_languages, languageCode]
     }));
   };
 
@@ -384,6 +435,36 @@ const Generate = () => {
                 Generate Mermaid diagrams to visualize code structure and flow
               </p>
             </div>
+
+            {/* Translation Languages */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                <Languages className="h-4 w-4 inline mr-2" />
+                Translation Languages ({supportedLanguages.length} available)
+              </label>
+              {supportedLanguages.length === 0 ? (
+                <div className="text-sm text-gray-500 p-4 bg-gray-50 rounded border">
+                  Loading languages... If this persists, check the console for errors.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {supportedLanguages.map(language => (
+                    <label key={language.value} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.translation_languages.includes(language.value)}
+                        onChange={() => handleLanguageChange(language.value)}
+                        className="mr-2 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700">{language.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="mt-1 text-xs text-gray-500">
+                Select languages for automatic translation of the generated documentation
+              </p>
+            </div>
           </div>
 
           {/* Submit Button */}
@@ -422,7 +503,7 @@ const Generate = () => {
             Powered by Multi-Agent Intelligence
           </h2>
           <p className="text-lg text-gray-600 mt-2 max-w-2xl mx-auto">
-            Six specialized AI agents work together to analyze your code and generate comprehensive documentation
+            Seven specialized AI agents work together to analyze your code and generate comprehensive multilingual documentation
           </p>
         </div>
 
@@ -591,6 +672,13 @@ const Generate = () => {
             <div>
               <h4 className="font-medium text-gray-900">Visual Diagrams</h4>
               <p className="text-sm text-gray-600">Architectural diagrams and code flow visualization</p>
+            </div>
+          </div>
+          <div className="flex items-start space-x-3">
+            <Languages className="h-5 w-5 text-teal-600 mt-0.5" />
+            <div>
+              <h4 className="font-medium text-gray-900">Multi-Language Support</h4>
+              <p className="text-sm text-gray-600">Automatic translation to 5 languages for global accessibility</p>
             </div>
           </div>
         </div>

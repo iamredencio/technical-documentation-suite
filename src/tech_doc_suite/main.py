@@ -1444,7 +1444,7 @@ async def serve_frontend(path: str):
     
     # Don't intercept API routes or static file routes
     # Note: "generate" and "status" without IDs are valid frontend routes, so only exclude API paths
-    if path.startswith(("api/", "docs", "openapi.json", "health", "status/", "feedback", "workflows", "agents", "debug", "static/", "translation/", "auth/", "github/")):
+    if path.startswith(("api/", "docs", "openapi.json", "health", "status/", "feedback", "workflows", "agents", "debug", "static/", "translation/", "auth/", "github/", "download/")):
         # Let FastAPI handle these normally - this shouldn't normally be reached due to route precedence
         raise HTTPException(status_code=404, detail="Not found")
     

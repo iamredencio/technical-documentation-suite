@@ -1469,6 +1469,17 @@ async def serve_favicon_ico():
     else:
         raise HTTPException(status_code=404, detail="Favicon ICO not found")
 
+@app.get("/robots.txt")
+async def serve_robots():
+    """Serve the robots.txt file"""
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
+    robots_file = os.path.join(static_directory, "robots.txt")
+    
+    if os.path.exists(robots_file):
+        return FileResponse(robots_file, media_type="text/plain")
+    else:
+        raise HTTPException(status_code=404, detail="Robots.txt not found")
+
 @app.get("/{path:path}")
 async def serve_frontend(path: str):
     """Serve React frontend for all non-API routes"""
@@ -1477,7 +1488,7 @@ async def serve_frontend(path: str):
     
     # Don't intercept API routes or static file routes
     # Note: "generate" and "status" without IDs are valid frontend routes, so only exclude API paths
-    if path.startswith(("api/", "docs", "openapi.json", "health", "status/", "feedback", "workflows", "agents", "debug", "static/", "translation/", "auth/", "github/", "download/")):
+    if path.startswith(("api/", "docs", "openapi.json", "health", "status/", "feedback", "workflows", "agents", "debug", "static/", "translation/", "auth/", "github/", "download/")) or path in ("manifest.json", "favicon.svg", "favicon.ico", "logo192.svg", "logo512.svg", "robots.txt"):
         # Let FastAPI handle these normally - this shouldn't normally be reached due to route precedence
         raise HTTPException(status_code=404, detail="Not found")
     

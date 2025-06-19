@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="256" cy="256" r="220" fill="url(#gradient1)" stroke="#2563eb" stroke-width="16"/>
+  
+  <!-- Document Icon -->
+  <rect x="160" y="140" width="160" height="200" rx="8" fill="white" stroke="#1e40af" stroke-width="4"/>
+  <rect x="160" y="160" width="120" height="6" fill="#3b82f6"/>
+  <rect x="160" y="180" width="140" height="6" fill="#3b82f6"/>
+  <rect x="160" y="200" width="130" height="6" fill="#3b82f6"/>
+  <rect x="160" y="220" width="120" height="6" fill="#3b82f6"/>
+  <rect x="160" y="240" width="140" height="6" fill="#3b82f6"/>
+  <rect x="160" y="260" width="125" height="6" fill="#3b82f6"/>
+  
+  <!-- AI Brain/Network -->
+  <circle cx="380" cy="180" r="40" fill="#8b5cf6" opacity="0.9"/>
+  <circle cx="340" cy="240" r="32" fill="#06b6d4" opacity="0.9"/>
+  <circle cx="400" cy="260" r="28" fill="#10b981" opacity="0.9"/>
+  <circle cx="420" cy="320" r="24" fill="#f59e0b" opacity="0.9"/>
+  
+  <!-- Connection Lines -->
+  <line x1="360" y1="200" x2="350" y2="220" stroke="#6366f1" stroke-width="4"/>
+  <line x1="380" y1="220" x2="390" y2="240" stroke="#6366f1" stroke-width="4"/>
+  <line x1="390" y1="280" x2="410" y2="300" stroke="#6366f1" stroke-width="4"/>
+  
+  <!-- Agent Icons -->
+  <circle cx="120" cy="160" r="20" fill="#ef4444" opacity="0.8"/>
+  <circle cx="100" cy="220" r="18" fill="#f97316" opacity="0.8"/>
+  <circle cx="140" cy="280" r="16" fill="#84cc16" opacity="0.8"/>
+  
+  <!-- More Connection Lines -->
+  <line x1="130" y1="180" x2="110" y2="200" stroke="#ec4899" stroke-width="3"/>
+  <line x1="120" y1="240" x2="135" y2="265" stroke="#ec4899" stroke-width="3"/>
+  
+  <!-- Gradient Definition -->
+  <defs>
+    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.1"/>
+      <stop offset="50%" style="stop-color:#8b5cf6;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:0.2"/>
+    </linearGradient>
+  </defs>
+</svg> 

@@ -139,7 +139,7 @@ class TranslationAgent(BaseAgent):
                 "translations": translations,
                 "original_content": original_content,
                 "statistics": translation_stats,
-                "ai_powered": ai_service.enabled
+                "ai_powered": ai_service.is_available()
             },
             sender=self.agent_id,
             recipient=message.sender
@@ -147,41 +147,17 @@ class TranslationAgent(BaseAgent):
     
     async def _perform_translation(self, content: str, language_info: Dict[str, Any], project_context: Dict[str, Any]) -> str:
         """Perform the actual translation using AI service"""
-        if not ai_service.enabled:
+        if not ai_service.is_available():
             return self._fallback_translation(content, language_info)
         
         try:
-            project_name = project_context.get("project_id", "software project")
-            target_language = language_info["name"]
-            native_name = language_info["native_name"]
-            
-            prompt = f"""
-            Translate the following technical documentation from English to {target_language} ({native_name}).
-            
-            This is documentation for a {project_name}.
-            
-            **Important Translation Guidelines:**
-            1. Maintain all technical terms and code examples exactly as they are
-            2. Preserve markdown formatting and structure
-            3. Keep API endpoints, function names, and variable names unchanged
-            4. Translate only the descriptive text and comments
-            5. Ensure technical accuracy and clarity for developers
-            6. Use appropriate technical terminology in {target_language}
-            7. Maintain professional documentation tone
-            
-            **Original Documentation:**
-            
-            {content}
-            
-            **Translation Instructions:**
-            - Translate to natural, professional {target_language}
-            - Keep all code blocks, URLs, and technical identifiers unchanged
-            - Preserve the markdown structure (headers, lists, etc.)
-            - Use technical vocabulary appropriate for software developers
-            """
-            
-            response = await ai_service._generate_text(prompt)
-            return response
+            # Use the proper AI service translate_content method
+            translated_content = await ai_service.translate_content(
+                content=content,
+                target_language=language_info,
+                context=project_context
+            )
+            return translated_content
             
         except Exception as e:
             self.logger.error(f"AI translation failed: {e}")

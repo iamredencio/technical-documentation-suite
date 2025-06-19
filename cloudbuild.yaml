@@ -36,7 +36,8 @@ steps:
       '--min-instances', '0',
       '--concurrency', '4',
       '--timeout', '900s',
-      '--set-env-vars', 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,STORAGE_BUCKET=$PROJECT_ID-doc-suite-artifacts,BIGQUERY_DATASET=documentation_analytics,ENVIRONMENT=production,LOG_LEVEL=INFO'
+      '--set-env-vars', 'GOOGLE_CLOUD_PROJECT=$PROJECT_ID,STORAGE_BUCKET=technical-documentation-suite-artifacts,BIGQUERY_DATASET=documentation_analytics,ENVIRONMENT=production,LOG_LEVEL=INFO',
+      '--set-secrets', 'GEMINI_API_KEY=gemini-api-key:latest'
     ]
 
 # Secrets will be configured after initial deployment

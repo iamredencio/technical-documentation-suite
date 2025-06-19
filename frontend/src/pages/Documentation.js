@@ -15,7 +15,8 @@ import {
   RefreshCw,
   CheckCircle,
   XCircle,
-  Languages
+  Languages,
+  Folder
 } from 'lucide-react';
 import { apiService } from '../config/api';
 
@@ -26,6 +27,7 @@ const Documentation = () => {
   const [activeTab, setActiveTab] = useState('documentation');
   const [qualityMetrics, setQualityMetrics] = useState(null);
   const [selectedTranslation, setSelectedTranslation] = useState(null);
+  const [repositorySummary, setRepositorySummary] = useState(null);
 
   const fetchDocumentation = useCallback(async () => {
     try {
@@ -54,6 +56,34 @@ const Documentation = () => {
         };
 
         setDocumentation(docData);
+        
+        // Set repository summary from backend result
+        if (result.repository_summary) {
+          setRepositorySummary(result.repository_summary);
+        } else if (result.analysis) {
+          // Fallback: create summary from analysis data
+          setRepositorySummary({
+            project_name: result.analysis.project_id || 'Unknown Project',
+            repository_url: result.analysis.repository_url || '',
+            total_files: result.analysis.file_count || 0,
+            total_lines_of_code: result.analysis.lines_of_code || 0,
+            programming_languages: Object.keys(result.analysis.language_distribution || {}),
+            language_breakdown: result.analysis.language_distribution || {},
+            total_functions: (result.analysis.functions || []).length,
+            total_classes: (result.analysis.classes || []).length,
+            total_dependencies: (result.analysis.dependencies || []).length,
+            project_structure: result.analysis.structure || {},
+            functions_detail: (result.analysis.functions || []).slice(0, 10),
+            classes_detail: (result.analysis.classes || []).slice(0, 10),
+            dependencies_detail: (result.analysis.dependencies || []).slice(0, 15),
+            api_endpoints: result.analysis.api_endpoints || [],
+            complexity_metrics: {
+              average_file_size: result.analysis.lines_of_code / Math.max(result.analysis.file_count, 1) || 0,
+              functions_per_file: (result.analysis.functions || []).length / Math.max(result.analysis.file_count, 1) || 0,
+              classes_per_file: (result.analysis.classes || []).length / Math.max(result.analysis.file_count, 1) || 0
+            }
+          });
+        }
         
         // Set quality metrics from backend result
         if (result.quality) {
@@ -289,6 +319,7 @@ The system uses a multi-agent approach with specialized agents for different tas
           <nav className="flex space-x-8 px-8">
             {[
               { id: 'documentation', name: 'Documentation', icon: FileText },
+              { id: 'repository', name: 'Repository Summary', icon: Folder },
               { id: 'translations', name: 'Translations', icon: Languages },
               { id: 'diagrams', name: 'Diagrams', icon: BarChart3 },
               { id: 'quality', name: 'Quality Metrics', icon: Star }
@@ -482,6 +513,192 @@ The system uses a multi-agent approach with specialized agents for different tas
               )}
             </div>
           )}
+
+          {/* Repository Summary Tab */}
+          {activeTab === 'repository' && repositorySummary && (
+            <div className="space-y-6">
+              {/* Project Overview */}
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                  Project Overview
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-blue-50 rounded-lg p-4 text-center">
+                    <div className="text-2xl font-bold text-blue-600 mb-1">
+                      {repositorySummary.total_files || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Total Files</div>
+                  </div>
+                  <div className="bg-green-50 rounded-lg p-4 text-center">
+                    <div className="text-2xl font-bold text-green-600 mb-1">
+                      {repositorySummary.total_lines_of_code?.toLocaleString() || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Lines of Code</div>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-4 text-center">
+                    <div className="text-2xl font-bold text-purple-600 mb-1">
+                      {repositorySummary.total_functions || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Functions</div>
+                  </div>
+                  <div className="bg-orange-50 rounded-lg p-4 text-center">
+                    <div className="text-2xl font-bold text-orange-600 mb-1">
+                      {repositorySummary.total_classes || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">Classes</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Programming Languages */}
+              {repositorySummary.programming_languages && repositorySummary.programming_languages.length > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">
+                    Programming Languages
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {repositorySummary.programming_languages.map((lang, index) => (
+                      <div key={index} className="bg-gray-50 rounded-lg p-3 text-center">
+                        <div className="font-medium text-gray-900 capitalize">{lang}</div>
+                        <div className="text-sm text-gray-600">
+                          {repositorySummary.language_breakdown && repositorySummary.language_breakdown[lang] 
+                            ? `${(repositorySummary.language_breakdown[lang] * 100).toFixed(1)}%`
+                            : 'N/A'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Project Structure */}
+              {repositorySummary.project_structure && Object.keys(repositorySummary.project_structure).length > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">
+                    Project Structure
+                  </h4>
+                  <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-y-auto">
+                    <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {Object.entries(repositorySummary.project_structure).map(([folder, files]) => (
+                        <div key={folder} className="mb-2">
+                          <div className="font-semibold text-blue-600">📁 {folder}</div>
+                          {Array.isArray(files) ? files.map((file, idx) => (
+                            <div key={idx} className="ml-4 text-gray-600">📄 {file}</div>
+                          )) : null}
+                        </div>
+                      ))}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              {/* Functions Detail */}
+              {repositorySummary.functions_detail && repositorySummary.functions_detail.length > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">
+                    Top Functions ({repositorySummary.functions_detail.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {repositorySummary.functions_detail.map((func, index) => (
+                      <div key={index} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-medium text-gray-900">{func.name}</div>
+                            <div className="text-sm text-gray-600">{func.file}</div>
+                            {func.docstring && (
+                              <div className="text-sm text-gray-500 mt-1">{func.docstring}</div>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            Line {func.line}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Classes Detail */}
+              {repositorySummary.classes_detail && repositorySummary.classes_detail.length > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">
+                    Top Classes ({repositorySummary.classes_detail.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {repositorySummary.classes_detail.map((cls, index) => (
+                      <div key={index} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-medium text-gray-900">{cls.name}</div>
+                            <div className="text-sm text-gray-600">{cls.file}</div>
+                            {cls.docstring && (
+                              <div className="text-sm text-gray-500 mt-1">{cls.docstring}</div>
+                            )}
+                            {cls.methods && cls.methods.length > 0 && (
+                              <div className="text-xs text-gray-400 mt-1">
+                                Methods: {cls.methods.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            Line {cls.line}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Dependencies */}
+              {repositorySummary.dependencies_detail && repositorySummary.dependencies_detail.length > 0 && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">
+                    Dependencies ({repositorySummary.dependencies_detail.length})
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {repositorySummary.dependencies_detail.map((dep, index) => (
+                      <div key={index} className="bg-gray-50 rounded-lg p-2 text-center">
+                        <div className="text-sm font-medium text-gray-900">{dep}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Complexity Metrics */}
+              {repositorySummary.complexity_metrics && (
+                <div>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">
+                    Complexity Metrics
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-gray-50 rounded-lg p-4 text-center">
+                      <div className="text-xl font-bold text-gray-700 mb-1">
+                        {repositorySummary.complexity_metrics.average_file_size?.toFixed(1) || '0.0'}
+                      </div>
+                      <div className="text-sm text-gray-600">Avg Lines per File</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 text-center">
+                      <div className="text-xl font-bold text-gray-700 mb-1">
+                        {repositorySummary.complexity_metrics.functions_per_file?.toFixed(1) || '0.0'}
+                      </div>
+                      <div className="text-sm text-gray-600">Functions per File</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 text-center">
+                      <div className="text-xl font-bold text-gray-700 mb-1">
+                        {repositorySummary.complexity_metrics.classes_per_file?.toFixed(1) || '0.0'}
+                      </div>
+                      <div className="text-sm text-gray-600">Classes per File</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+
         </div>
       </div>
 

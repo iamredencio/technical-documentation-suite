@@ -6,8 +6,11 @@ import os
 # Add the project directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from main import agents
-from src.agents.base_agent import Message
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+from tech_doc_suite.main import agents
+from tech_doc_suite.agents.base_agent import Message
 
 async def test_individual_agents():
     """Test each agent individually"""

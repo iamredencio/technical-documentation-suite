@@ -1,0 +1,101 @@
+site_name: Technical Documentation Suite
+site_description: Revolutionary multi-agent system for automated technical documentation generation
+site_author: Technical Documentation Suite Team
+site_url: https://technical-documentation-suite.readthedocs.io
+
+repo_name: tech-doc-suite
+repo_url: https://github.com/technical-documentation-suite/tech-doc-suite
+edit_uri: edit/main/docs/
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started/quick-start.md
+    - Installation: getting-started/installation.md
+    - Configuration: getting-started/configuration.md
+  - User Guide:
+    - Usage: user-guide/usage.md
+    - Frontend: user-guide/frontend.md
+    - API Reference: user-guide/api.md
+  - Developer Guide:
+    - Architecture: developer-guide/architecture.md
+    - Agents: developer-guide/agents.md
+    - Contributing: developer-guide/contributing.md
+  - Deployment:
+    - Local Development: deployment/local.md
+    - Google Cloud: deployment/gcp.md
+    - Docker: deployment/docker.md
+    - Kubernetes: deployment/kubernetes.md
+  - About:
+    - Changelog: about/changelog.md
+    - License: about/license.md
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.action.edit
+    - content.action.view
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.mark
+  - pymdownx.caret
+  - pymdownx.keys
+  - pymdownx.tilde
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mermaid2:
+      arguments:
+        theme: base
+        themeVariables:
+          primaryColor: '#1976d2'
+          primaryTextColor: '#ffffff'
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/technical-documentation-suite
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/technical-documentation-suite/
+  version:
+    provider: mike
+
+extra_css:
+  - stylesheets/extra.css 

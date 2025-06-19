@@ -152,57 +152,51 @@ const Generate = () => {
 
     const monitorWorkflow = async (workflowId) => {
     let pollCount = 0;
-    let simulatedAgentIndex = 0;
+    const maxPolls = 450; // 15 minutes maximum (450 * 2 seconds)
     
-    // Since backend completes too fast, simulate agent progression for better UX
-    const simulateAgentProgression = () => {
-      const agentNames = ['Code Analyzer', 'Doc Writer', 'Translation Agent', 'Diagram Generator', 'Quality Reviewer'];
-      
-      const progressThroughAgents = () => {
-        if (simulatedAgentIndex < agentNames.length && isGenerating) {
-          console.log(`🎯 Simulating agent: ${agentNames[simulatedAgentIndex]} (index ${simulatedAgentIndex})`);
-          updateActiveAgent(simulatedAgentIndex);
-          simulatedAgentIndex++;
-          setTimeout(progressThroughAgents, 2000); // Change agent every 2 seconds
-        }
-      };
-      
-      progressThroughAgents();
-    };
-    
-    // Start the simulation
-    simulateAgentProgression();
+    console.log(`🎯 Starting enhanced workflow monitoring for ${workflowId}`);
     
     const pollInterval = setInterval(async () => {
       try {
         pollCount++;
         const response = await apiService.getWorkflowStatus(workflowId);
+        
         if (response.data.success) {
           const workflowData = response.data.data;
-          console.log(`🔄 Poll ${pollCount}: Status=${workflowData.status}, Progress=${workflowData.progress}%`);
+          console.log(`🔄 Poll ${pollCount}: Status=${workflowData.status}, Agent=${workflowData.current_agent}, Progress=${workflowData.progress}%`);
           
-          // Check if workflow is completed
+          // Map current agent to frontend index
+          if (workflowData.current_agent && workflowData.status === 'processing') {
+            const agentMapping = {
+              'code_analyzer': 0,
+              'doc_writer': 1,
+              'diagram_generator': 2,
+              'translation_agent': 3,
+              'quality_reviewer': 4,
+              'orchestrator': 5,
+              'feedback_collector': 6
+            };
+            
+            const agentIndex = agentMapping[workflowData.current_agent];
+            if (agentIndex !== undefined && agentIndex !== activeAgent) {
+              updateActiveAgent(agentIndex);
+            }
+          }
+          
+          // Handle completion
           if (workflowData.status === 'completed') {
             console.log('🎉 Workflow completed successfully!');
+            clearInterval(pollInterval);
             
-            // Complete remaining agents quickly
-            for (let i = simulatedAgentIndex; i < 7; i++) {
-              setTimeout(() => {
-                updateActiveAgent(i);
-              }, (i - simulatedAgentIndex) * 300);
-            }
+            // Show all agents as completed
+            updateActiveAgent(-1);
+            setIsGenerating(false);
             
+            toast.success('Documentation generation completed!');
             setTimeout(() => {
-              clearInterval(pollInterval);
-              setIsGenerating(false);
-              updateActiveAgent(-1);
-              
-              // Show completion message and navigate after a delay
-              toast.success('Documentation generation completed!');
-              setTimeout(() => {
-                navigate(`/status/${workflowId}`);
-              }, 2000);
+              navigate(`/status/${workflowId}`);
             }, 2000);
+            
           } else if (workflowData.status === 'failed') {
             console.log('❌ Workflow failed');
             clearInterval(pollInterval);
@@ -213,17 +207,25 @@ const Generate = () => {
         }
       } catch (error) {
         console.error('Error monitoring workflow:', error);
+        
+        // Only fail after multiple consecutive errors
+        if (pollCount > 5) {
+          clearInterval(pollInterval);
+          setIsGenerating(false);
+          updateActiveAgent(-1);
+          toast.error('Lost connection to workflow');
+        }
       }
-    }, 2000); // Poll every 2 seconds just to check completion
-
-    // Stop polling after 5 minutes max
-    setTimeout(() => {
-      clearInterval(pollInterval);
-      if (isGenerating) {
-        console.log('⏰ Polling timeout reached, navigating to status page');
-        navigate(`/status/${workflowId}`);
+      
+      // Stop polling after maximum time
+      if (pollCount >= maxPolls) {
+        clearInterval(pollInterval);
+        if (isGenerating) {
+          console.log('⏰ Polling timeout reached, navigating to status page');
+          navigate(`/status/${workflowId}`);
+        }
       }
-    }, 300000);
+    }, 1500); // Poll every 1.5 seconds for more responsive updates
   };
 
   const getAgentStatus = useCallback((index) => {

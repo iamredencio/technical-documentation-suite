@@ -10,8 +10,6 @@ steps:
       'gcr.io/$PROJECT_ID/technical-doc-suite:latest',
       '-t', 
       'gcr.io/$PROJECT_ID/technical-doc-suite:$BUILD_ID',
-      '-f',
-      'deployment/Dockerfile',
       '.'
     ]
 

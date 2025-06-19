@@ -28,12 +28,11 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy pyproject.toml and install Python dependencies
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
 
 # Copy application code
-COPY main.py .
 COPY src/ ./src/
 
 # Copy the built React frontend from the previous stage
@@ -57,4 +56,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # Start the application
-CMD ["python", "main.py"] 
+CMD ["python", "-c", "import sys; sys.path.append('/app/src'); from tech_doc_suite.main import main; main()"] 

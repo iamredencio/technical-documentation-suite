@@ -32,48 +32,56 @@ const Status = () => {
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [currentAgentIndex, setCurrentAgentIndex] = useState(0);
 
-  const agents = useMemo(() => [
+  // Orchestrator-driven architecture: Orchestrator manages all other agents
+  const orchestrator = useMemo(() => ({
+    icon: Workflow,
+    name: 'Content Orchestrator',
+    description: 'Manages the complete documentation generation workflow',
+    color: 'from-indigo-500 to-indigo-600',
+  }), []);
+
+  const delegatedAgents = useMemo(() => [
     {
       icon: GitBranch,
       name: 'Code Analyzer',
-      description: 'Analyzing repository structure and extracting code elements',
+      description: 'Analyzes repository structure, extracts functions, classes, and dependencies',
       color: 'from-blue-500 to-blue-600',
+      phase: 1
     },
     {
       icon: FileText,
       name: 'Documentation Writer',
-      description: 'Generating comprehensive documentation content',
+      description: 'Generates comprehensive documentation using AI in multiple formats',
       color: 'from-green-500 to-green-600',
+      phase: 2
     },
     {
       icon: BarChart3,
       name: 'Diagram Generator',
-      description: 'Creating architectural and flow diagrams',
+      description: 'Creates architectural and flow diagrams using Mermaid',
       color: 'from-purple-500 to-purple-600',
+      phase: 3
     },
     {
       icon: Languages,
       name: 'Translation Agent',
-      description: 'Translating documentation to multiple languages',
+      description: 'Translates documentation to multiple languages for global accessibility',
       color: 'from-teal-500 to-teal-600',
+      phase: 4
     },
     {
       icon: Eye,
       name: 'Quality Reviewer',
-      description: 'Assessing documentation quality and providing feedback',
+      description: 'Assesses documentation quality and provides improvement suggestions',
       color: 'from-orange-500 to-orange-600',
-    },
-    {
-      icon: Workflow,
-      name: 'Content Orchestrator',
-      description: 'Managing workflow and coordinating agents',
-      color: 'from-indigo-500 to-indigo-600',
+      phase: 5
     },
     {
       icon: MessageSquare,
       name: 'User Feedback',
-      description: 'Collecting and processing user feedback',
+      description: 'Collects and analyzes user feedback for continuous improvement',
       color: 'from-pink-500 to-pink-600',
+      phase: 6
     },
   ], []);
 
@@ -95,11 +103,10 @@ const Status = () => {
     let interval;
     
     if (status?.status === 'processing') {
-      // Poll more frequently during processing to catch fast agent transitions
-      interval = setInterval(fetchStatus, 500); // Poll every 500ms instead of 2000ms
+      // More frequent polling during processing for better real-time updates
+      interval = setInterval(fetchStatus, 1000); // Poll every 1 second during processing
     } else if (status?.status === 'initiated') {
-      // Poll normally for initiated status
-      interval = setInterval(fetchStatus, 1000);
+      interval = setInterval(fetchStatus, 2000);
     }
     
     return () => {
@@ -112,35 +119,39 @@ const Status = () => {
     fetchStatus();
   }, [fetchStatus]);
 
-  // Update agent status based on real backend data
+  // Update agent status based on orchestrator-driven architecture
   useEffect(() => {
     if (status?.status === 'processing' && status?.agents) {
       // Find currently active agent
       const activeAgentKey = status.current_agent;
       if (activeAgentKey) {
-        // Create a mapping between backend agent keys and frontend agent indices
-        // This MUST match the actual execution order in main.py
-        const agentMapping = {
-          'code_analyzer': 0,        // First: Repository Analysis  
-          'doc_writer': 1,           // Second: Documentation Generation
-          'diagram_generator': 2,    // Third: Diagram Creation
-          'translation_agent': 3,    // Fourth: Translation
-          'quality_reviewer': 4,     // Fifth: Quality Review
-          'orchestrator': 5,         // Sixth: Orchestration
-          'feedback_collector': 6    // Seventh: Feedback Collection
+        // Map backend agent keys to delegated agent phases
+        // Orchestrator is always active, but delegates to specific agents
+        const agentPhaseMapping = {
+          'code_analyzer': 1,        // Phase 1: Repository Analysis  
+          'doc_writer': 2,           // Phase 2: Documentation Generation
+          'diagram_generator': 3,    // Phase 3: Diagram Creation
+          'translation_agent': 4,    // Phase 4: Translation
+          'quality_reviewer': 5,     // Phase 5: Quality Review
+          'feedback_collector': 6,   // Phase 6: Feedback Collection
+          'orchestrator': 0          // Orchestrator manages all phases
         };
         
-        const agentIndex = agentMapping[activeAgentKey];
-        if (agentIndex !== undefined) {
-          setCurrentAgentIndex(agentIndex);
+        const currentPhase = agentPhaseMapping[activeAgentKey];
+        if (currentPhase !== undefined) {
+          setCurrentAgentIndex(currentPhase);
           // Only log in development mode
           if (process.env.NODE_ENV === 'development') {
-            console.log(`Agent Progress: ${activeAgentKey} (${agentIndex + 1}/7) - ${agents[agentIndex]?.name}`);
+            if (currentPhase === 0) {
+              console.log(`🎼 Orchestrator is coordinating the workflow`);
+            } else {
+              console.log(`🎼 Orchestrator → Delegating to ${delegatedAgents[currentPhase - 1]?.name} (Phase ${currentPhase}/6)`);
+            }
           }
         }
       }
     }
-  }, [status?.status, status?.current_agent, status?.agents, agents]);
+  }, [status?.status, status?.current_agent, status?.agents, delegatedAgents]);
 
   const submitFeedback = async () => {
     try {
@@ -332,13 +343,13 @@ const Status = () => {
         </div>
       </div>
 
-      {/* Agent Workflow Visualization */}
+      {/* Orchestrator-Driven Workflow Visualization */}
       {status.status === 'processing' && (
         <div className="bg-white rounded-2xl shadow-lg p-8">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-semibold text-gray-900 flex items-center">
               <RefreshCw className="h-5 w-5 text-blue-600 mr-2 animate-spin" />
-              Agent Workflow in Progress
+              Orchestrator-Driven Workflow
             </h3>
             <button
               onClick={stopWorkflow}
@@ -348,125 +359,182 @@ const Status = () => {
               <span>Stop Workflow</span>
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {agents.map((agent, index) => {
-              // Check both currentAgentIndex and direct backend status for more reliable detection
-              const isActiveByIndex = index === currentAgentIndex && status?.status === 'processing';
-              
-              // Map frontend agent names to backend agent IDs
-              const frontendToBackendMap = {
-                'Code Analyzer': 'code_analyzer',
-                'Documentation Writer': 'doc_writer', 
-                'Diagram Generator': 'diagram_generator',
-                'Translation Agent': 'translation_agent',
-                'Quality Reviewer': 'quality_reviewer',
-                'Content Orchestrator': 'orchestrator',
-                'User Feedback': 'feedback_collector'
-              };
-              
-              const backendAgentId = frontendToBackendMap[agent.name];
-              const backendAgent = status?.agents?.[backendAgentId];
-              const isActiveByBackend = backendAgent?.status === 'active';
-              const isActiveByCurrentAgent = status?.current_agent === backendAgentId;
-              
-              // Agent is active if any of the conditions are true
-              const isActive = isActiveByIndex || isActiveByBackend || isActiveByCurrentAgent;
-              const isCompleted = backendAgent?.status === 'completed';
-              
-              return (
-                <div
-                  key={index}
-                  className={`p-4 rounded-lg border-2 transition-all duration-300 ${
-                    isActive 
-                      ? 'border-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50 shadow-lg transform scale-105' 
-                      : isCompleted 
-                        ? 'border-green-400 bg-green-50' 
-                        : 'border-gray-200 bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center space-x-3">
-                    <div className={`p-2 rounded-lg ${
+
+          {/* Orchestrator (Always Active) */}
+          <div className="mb-8 p-6 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border-2 border-indigo-300 shadow-lg">
+            <div className="flex items-center space-x-4">
+              <div className={`p-3 rounded-lg bg-gradient-to-r ${orchestrator.color} animate-pulse shadow-lg`}>
+                {React.createElement(orchestrator.icon, { className: "h-6 w-6 text-white animate-spin" })}
+              </div>
+              <div className="flex-1">
+                <h4 className="text-xl font-bold text-indigo-900 flex items-center">
+                  🎼 {orchestrator.name}
+                  <span className="ml-3 text-sm bg-yellow-400 text-yellow-900 px-3 py-1 rounded-full font-bold animate-pulse">
+                    ACTIVE
+                  </span>
+                </h4>
+                <p className="text-sm text-indigo-700 mt-1">{orchestrator.description}</p>
+                <div className="text-xs text-indigo-600 mt-2 font-medium">
+                  Currently coordinating: {status?.current_agent ? `${status.current_agent.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}` : 'Workflow initialization'}
+                </div>
+              </div>
+              <div className="flex space-x-1">
+                <div className="w-3 h-3 bg-indigo-400 rounded-full animate-ping"></div>
+                <div className="w-3 h-3 bg-indigo-400 rounded-full animate-ping" style={{animationDelay: '0.3s'}}></div>
+                <div className="w-3 h-3 bg-indigo-400 rounded-full animate-ping" style={{animationDelay: '0.6s'}}></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Delegated Agents */}
+          <div className="mb-6">
+            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <span className="text-indigo-600 mr-2">🎯</span>
+              Delegated Agents (Coordinated by Orchestrator)
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {delegatedAgents.map((agent, index) => {
+                // Map agent names to backend agent IDs
+                const agentBackendMap = {
+                  'Code Analyzer': 'code_analyzer',
+                  'Documentation Writer': 'doc_writer', 
+                  'Diagram Generator': 'diagram_generator',
+                  'Translation Agent': 'translation_agent',
+                  'Quality Reviewer': 'quality_reviewer',
+                  'User Feedback': 'feedback_collector'
+                };
+                
+                const backendAgentId = agentBackendMap[agent.name];
+                const backendAgent = status?.agents?.[backendAgentId];
+                
+                // Simplified logic: Show agent status based on backend data and orchestrator context
+                const isActive = backendAgent?.status === 'active';
+                const isCompleted = backendAgent?.status === 'completed';
+                const isWaiting = !isActive && !isCompleted && status?.status === 'processing';
+                
+                return (
+                  <div
+                    key={index}
+                    className={`p-4 rounded-lg border-2 transition-all duration-300 ${
                       isActive 
-                        ? `bg-gradient-to-r ${agent.color} animate-pulse` 
+                        ? 'border-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50 shadow-lg transform scale-105' 
                         : isCompleted 
-                          ? 'bg-green-500' 
-                          : 'bg-gray-400'
-                    }`}>
-                      {React.createElement(agent.icon, { 
-                        className: `h-5 w-5 text-white ${isActive ? 'animate-spin' : ''}` 
-                      })}
-                    </div>
-                    <div className="flex-1">
-                      <h4 className={`font-semibold ${
-                        isActive ? 'text-orange-900' : isCompleted ? 'text-green-900' : 'text-gray-700'
-                      }`}>
-                        {agent.name}
-                        {isActive && (
-                          <span className="ml-2 text-sm bg-yellow-400 text-yellow-900 px-2 py-1 rounded-full font-bold animate-pulse">
-                            ACTIVE
-                          </span>
-                        )}
-                        {isCompleted && (
-                          <span className="ml-2 text-sm bg-green-400 text-green-900 px-2 py-1 rounded-full font-bold">
-                            ✅ COMPLETE
-                          </span>
-                        )}
-                      </h4>
-                      <p className="text-xs text-gray-600">
-                        {backendAgent?.current_task || agent.description}
-                      </p>
-                      
-                      {/* Real-time status info */}
-                      {isActive && backendAgent && (
-                        <div className="text-xs text-orange-600 mt-1 font-medium">
-                          Progress: {backendAgent.progress || 0}% | Status: {backendAgent.status}
+                          ? 'border-green-400 bg-green-50' 
+                          : isWaiting
+                            ? 'border-blue-300 bg-blue-50'
+                            : 'border-gray-200 bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-bold text-gray-600 bg-gray-200 px-2 py-1 rounded-full">
+                          Phase {agent.phase}
+                        </span>
+                        <div className={`p-2 rounded-lg ${
+                          isActive 
+                            ? `bg-gradient-to-r ${agent.color} animate-pulse` 
+                            : isCompleted 
+                              ? 'bg-green-500' 
+                              : isWaiting
+                                ? 'bg-blue-400'
+                                : 'bg-gray-400'
+                        }`}>
+                          {React.createElement(agent.icon, { 
+                            className: `h-4 w-4 text-white ${isActive ? 'animate-spin' : ''}` 
+                          })}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Progress bar for active agent */}
-                  {isActive && (
-                    <div className="mt-3">
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-gradient-to-r from-yellow-400 to-orange-500 h-2 rounded-full transition-all duration-500" 
-                          style={{width: `${backendAgent?.progress || 100}%`}}
-                        />
+                      </div>
+                      <div className="flex-1">
+                        <h5 className={`font-semibold text-sm ${
+                          isActive ? 'text-orange-900' : isCompleted ? 'text-green-900' : isWaiting ? 'text-blue-900' : 'text-gray-700'
+                        }`}>
+                          {agent.name}
+                          {isActive && (
+                            <span className="ml-2 text-xs bg-yellow-400 text-yellow-900 px-2 py-1 rounded-full font-bold animate-pulse">
+                              ACTIVE
+                            </span>
+                          )}
+                          {isCompleted && (
+                            <span className="ml-2 text-xs bg-green-400 text-green-900 px-2 py-1 rounded-full font-bold">
+                              ✅ DONE
+                            </span>
+                          )}
+                          {isWaiting && (
+                            <span className="ml-2 text-xs bg-blue-400 text-blue-900 px-2 py-1 rounded-full font-bold">
+                              ⏳ WAITING
+                            </span>
+                          )}
+                        </h5>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {backendAgent?.current_task || agent.description}
+                        </p>
+                        
+                        {/* Real-time status info */}
+                        {isActive && backendAgent && (
+                          <div className="text-xs text-orange-600 mt-1 font-medium">
+                            Progress: {backendAgent.progress || 0}%
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    
+                    {/* Progress bar for active agent */}
+                    {isActive && (
+                      <div className="mt-3">
+                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                          <div 
+                            className="bg-gradient-to-r from-yellow-400 to-orange-500 h-1.5 rounded-full transition-all duration-500" 
+                            style={{width: `${backendAgent?.progress || 100}%`}}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
           
-          {/* Current Agent Details */}
-          {status?.current_agent && (
-            <div className="mt-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg border border-yellow-200">
+          {/* Current Delegation Status */}
+          {status?.status === 'processing' && status?.agents?.orchestrator?.status === 'active' && (
+            <div className="p-4 bg-gradient-to-r from-indigo-50 to-yellow-50 rounded-lg border border-indigo-200">
               <div className="flex items-center space-x-3">
-                <div className={`bg-gradient-to-r ${agents[currentAgentIndex].color} p-2 rounded-lg animate-bounce`}>
-                  {React.createElement(agents[currentAgentIndex].icon, { className: "h-5 w-5 text-white" })}
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900">
-                    Currently Processing: {agents[currentAgentIndex].name}
+                <div className="text-2xl">🎼</div>
+                <div className="flex-1">
+                  <h4 className="font-semibold text-gray-900 text-sm">
+                    {(() => {
+                      // Find which agent is currently active
+                      const activeAgent = Object.entries(status.agents || {}).find(([key, agent]) => 
+                        agent.status === 'active' && key !== 'orchestrator'
+                      );
+                      
+                      if (activeAgent) {
+                        const [agentKey] = activeAgent;
+                        return `Orchestrator → Delegating to: ${agentKey.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}`;
+                      }
+                      return 'Orchestrator → Coordinating workflow';
+                    })()}
                   </h4>
-                  <p className="text-sm text-gray-600">
-                    {status?.agents?.[status.current_agent]?.current_task || agents[currentAgentIndex].description}
+                  <p className="text-xs text-gray-600 mt-1">
+                    {(() => {
+                      const activeAgent = Object.entries(status.agents || {}).find(([key, agent]) => 
+                        agent.status === 'active' && key !== 'orchestrator'
+                      );
+                      if (activeAgent) {
+                        const [, agentData] = activeAgent;
+                        return agentData.current_task || 'Processing...';
+                      }
+                      return status.message || 'Orchestrating workflow phases';
+                    })()}
                   </p>
                   {status?.message && (
-                    <p className="text-xs text-blue-600 mt-1 font-medium">
+                    <p className="text-xs text-indigo-600 mt-1 font-medium">
                       {status.message}
                     </p>
                   )}
                 </div>
-                <div className="ml-auto">
-                  <div className="flex space-x-1">
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-ping"></div>
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-ping" style={{animationDelay: '0.2s'}}></div>
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-ping" style={{animationDelay: '0.4s'}}></div>
-                  </div>
+                <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                  Workflow ID: {status.workflow_id?.slice(0, 8)}...
                 </div>
               </div>
             </div>

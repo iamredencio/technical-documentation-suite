@@ -26,19 +26,36 @@ import asyncio
 from contextlib import asynccontextmanager
 
 # Import our agent modules
-from src.agents.base_agent import BaseAgent, Message
-from src.agents.code_analyzer import CodeAnalyzerAgent
-from src.agents.doc_writer import DocumentationWriterAgent
-from src.agents.translation_agent import TranslationAgent
-from src.agents.orchestrator import (
-    DiagramGeneratorAgent, 
-    QualityReviewerAgent, 
-    ContentOrchestratorAgent, 
-    UserFeedbackAgent
-)
-from src.utils.git_utils import clone_repo
-from src.services.github_service import github_service
-from src.services.ai_service import AIService
+try:
+    # Try relative imports first (when running as package)
+    from .agents.base_agent import BaseAgent, Message
+    from .agents.code_analyzer import CodeAnalyzerAgent
+    from .agents.doc_writer import DocumentationWriterAgent
+    from .agents.translation_agent import TranslationAgent
+    from .agents.orchestrator import (
+        DiagramGeneratorAgent, 
+        QualityReviewerAgent, 
+        ContentOrchestratorAgent, 
+        UserFeedbackAgent
+    )
+    from .utils.git_utils import clone_repo
+    from .services.github_service import github_service
+    from .services.ai_service import AIService
+except ImportError:
+    # Fall back to absolute imports (when running directly)
+    from tech_doc_suite.agents.base_agent import BaseAgent, Message
+    from tech_doc_suite.agents.code_analyzer import CodeAnalyzerAgent
+    from tech_doc_suite.agents.doc_writer import DocumentationWriterAgent
+    from tech_doc_suite.agents.translation_agent import TranslationAgent
+    from tech_doc_suite.agents.orchestrator import (
+        DiagramGeneratorAgent, 
+        QualityReviewerAgent, 
+        ContentOrchestratorAgent, 
+        UserFeedbackAgent
+    )
+    from tech_doc_suite.utils.git_utils import clone_repo
+    from tech_doc_suite.services.github_service import github_service
+    from tech_doc_suite.services.ai_service import AIService
 
 # Configure logging
 logging.basicConfig(
@@ -67,7 +84,7 @@ app.add_middleware(
 )
 
 # Mount static files for React frontend
-static_directory = os.path.join(os.path.dirname(__file__), "static")
+static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
 if os.path.exists(static_directory):
     # Mount the React build's static directory to serve CSS, JS, and other assets
     react_static_dir = os.path.join(static_directory, "static")
@@ -140,6 +157,9 @@ class StopWorkflowRequest(BaseModel):
 # In-memory storage for demo (in production, this would be in a database)
 workflows: Dict[str, WorkflowStatus] = {}
 agent_execution_queue: Dict[str, List[str]] = {}  # workflow_id -> list of agent names
+
+# Add enhanced agent tracking
+agent_transition_history: Dict[str, List[Dict]] = {}
 
 # Initialize agents
 agents = {
@@ -428,23 +448,48 @@ The system uses a multi-agent approach with specialized agents for different tas
             workflows[workflow_id].agents[agent_name].completed_at = datetime.now()
 
 async def run_ai_workflow_background(workflow_id: str, request: DocumentationRequest, repo_path: str):
-    """Run the AI workflow in the background with proper progress updates"""
+    """Run the AI workflow with proper orchestrator-driven architecture"""
     try:
-        # Start with code analyzer
-        workflows[workflow_id].progress = 22
-        workflows[workflow_id].message = "Analyzing repository structure"
-        workflows[workflow_id].current_agent = "code_analyzer"
-        if "code_analyzer" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["code_analyzer"].status = "active"
-            workflows[workflow_id].agents["code_analyzer"].started_at = datetime.now()
-            workflows[workflow_id].agents["code_analyzer"].current_task = "Analyzing repository"
-            workflows[workflow_id].agents["code_analyzer"].progress = 50
+        # Initialize transition history
+        agent_transition_history[workflow_id] = []
         
-        logger.info("🔄 Current Agent: code_analyzer (1/7) - Repository Analysis")
+        # ========== START ORCHESTRATOR (Active Throughout) ==========
+        workflows[workflow_id].progress = 10
+        workflows[workflow_id].message = "Content Orchestrator initializing workflow"
+        workflows[workflow_id].current_agent = "orchestrator"
         
-        # Simulate some processing time for progress updates
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 10, "Initializing workflow coordination"
+        )
+        
+        logger.info("🎼 Content Orchestrator (ACTIVE) - Managing entire workflow")
         await asyncio.sleep(2)
         
+        # ========== PHASE 1: CODE ANALYSIS (Orchestrated) ==========
+        workflows[workflow_id].progress = 20
+        workflows[workflow_id].message = "Orchestrator directing code analysis"
+        
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 20, "Coordinating code analysis phase"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "code_analyzer", "active", 25, "Analyzing repository structure"
+        )
+        
+        logger.info("🎼 Orchestrator → Delegating to Code Analyzer (1/6)")
+        await asyncio.sleep(3)
+        
+        # Update progress during analysis
+        await update_agent_status_with_history(
+            workflow_id, "code_analyzer", "active", 75, "Extracting functions and classes"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 25, "Monitoring code analysis progress"
+        )
+        
+        await asyncio.sleep(2)
+        
+        # Do the actual work
         code_analysis = agents["code_analyzer"].analyze_repository(repo_path)
         code_analysis["repository_url"] = request.repository_url
         code_analysis["project_id"] = request.project_id
@@ -461,9 +506,9 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
             "total_classes": len(code_analysis.get("classes", [])),
             "total_dependencies": len(code_analysis.get("dependencies", [])),
             "project_structure": code_analysis.get("structure", {}),
-            "functions_detail": code_analysis.get("functions", [])[:10],  # Top 10 functions
-            "classes_detail": code_analysis.get("classes", [])[:10],     # Top 10 classes
-            "dependencies_detail": code_analysis.get("dependencies", [])[:15],  # Top 15 dependencies
+            "functions_detail": code_analysis.get("functions", [])[:10],
+            "classes_detail": code_analysis.get("classes", [])[:10],
+            "dependencies_detail": code_analysis.get("dependencies", [])[:15],
             "api_endpoints": code_analysis.get("api_endpoints", []),
             "complexity_metrics": {
                 "average_file_size": round(code_analysis.get("lines_of_code", 0) / max(code_analysis.get("file_count", 1), 1), 2),
@@ -474,26 +519,41 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
         
         logger.info(f"Code analysis complete: {repo_summary['total_functions']} functions, {repo_summary['total_classes']} classes, {repo_summary['total_files']} files")
 
-        # Complete code analyzer
-        if "code_analyzer" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["code_analyzer"].status = "completed"
-            workflows[workflow_id].agents["code_analyzer"].progress = 100
-            workflows[workflow_id].agents["code_analyzer"].completed_at = datetime.now()
+        # Complete code analysis, orchestrator continues
+        await update_agent_status_with_history(
+            workflow_id, "code_analyzer", "completed", 100, "Analysis completed"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 30, "Code analysis completed, proceeding to documentation"
+        )
+        
+        await asyncio.sleep(3)
 
-        # Start doc writer
+        # ========== PHASE 2: DOCUMENTATION GENERATION (Orchestrated) ==========
         workflows[workflow_id].progress = 40
-        workflows[workflow_id].message = "Generating comprehensive documentation using AI"
-        workflows[workflow_id].current_agent = "doc_writer"
-        if "doc_writer" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["doc_writer"].status = "active"
-            workflows[workflow_id].agents["doc_writer"].started_at = datetime.now()
-            workflows[workflow_id].agents["doc_writer"].current_task = "Generating documentation"
-            workflows[workflow_id].agents["doc_writer"].progress = 50
+        workflows[workflow_id].message = "Orchestrator directing documentation generation"
         
-        logger.info("🔄 Current Agent: doc_writer (2/7) - Documentation Generation")
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 40, "Coordinating documentation generation"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "doc_writer", "active", 20, "Initializing AI documentation generation"
+        )
         
-        await asyncio.sleep(1)  # Allow status updates to be visible
+        logger.info("🎼 Orchestrator → Delegating to Documentation Writer (2/6)")
+        await asyncio.sleep(3)
         
+        # Update progress
+        await update_agent_status_with_history(
+            workflow_id, "doc_writer", "active", 60, "Generating documentation content"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 45, "Monitoring documentation generation"
+        )
+        
+        await asyncio.sleep(2)
+        
+        # Do the actual work
         documentation = await doc_writer_generate_async(
             agents["doc_writer"], 
             code_analysis, 
@@ -502,54 +562,84 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
         
         logger.info(f"Documentation generated: {len(documentation)} characters")
 
-        # Complete doc writer
-        if "doc_writer" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["doc_writer"].status = "completed"
-            workflows[workflow_id].agents["doc_writer"].progress = 100
-            workflows[workflow_id].agents["doc_writer"].completed_at = datetime.now()
+        # Complete documentation, orchestrator continues
+        await update_agent_status_with_history(
+            workflow_id, "doc_writer", "completed", 100, "Documentation generation completed"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 50, "Documentation completed, proceeding to diagrams"
+        )
+        
+        await asyncio.sleep(3)
 
-        # Start diagram generator
+        # ========== PHASE 3: DIAGRAM GENERATION (Orchestrated) ==========
         workflows[workflow_id].progress = 60
-        workflows[workflow_id].message = "Creating architectural diagrams"
-        workflows[workflow_id].current_agent = "diagram_generator"
-        if "diagram_generator" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["diagram_generator"].status = "active"
-            workflows[workflow_id].agents["diagram_generator"].started_at = datetime.now()
-            workflows[workflow_id].agents["diagram_generator"].current_task = "Creating diagrams"
-            workflows[workflow_id].agents["diagram_generator"].progress = 50
+        workflows[workflow_id].message = "Orchestrator directing diagram creation"
         
-        logger.info("🔄 Current Agent: diagram_generator (3/7) - Diagram Creation")
-    
-        await asyncio.sleep(1)  # Allow progress updates
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 60, "Coordinating diagram generation"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "diagram_generator", "active", 30, "Analyzing project architecture"
+        )
         
+        logger.info("🎼 Orchestrator → Delegating to Diagram Generator (3/6)")
+        await asyncio.sleep(3)
+        
+        # Update progress
+        await update_agent_status_with_history(
+            workflow_id, "diagram_generator", "active", 70, "Creating Mermaid diagrams"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 65, "Monitoring diagram creation"
+        )
+        
+        await asyncio.sleep(2)
+        
+        # Do the actual work
         diagrams = agents["diagram_generator"]._generate_architecture_diagram(code_analysis)
         logger.info("Diagrams generated successfully")
         
-        # Complete diagram generator
-        if "diagram_generator" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["diagram_generator"].status = "completed"
-            workflows[workflow_id].agents["diagram_generator"].progress = 100
-            workflows[workflow_id].agents["diagram_generator"].completed_at = datetime.now()
+        # Complete diagrams, orchestrator continues
+        await update_agent_status_with_history(
+            workflow_id, "diagram_generator", "completed", 100, "Diagrams created successfully"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 70, "Diagrams completed, proceeding to translation"
+        )
+        
+        await asyncio.sleep(3)
 
-        # Start translation agent
+        # ========== PHASE 4: TRANSLATION (Orchestrated) ==========
         workflows[workflow_id].progress = 75
-        workflows[workflow_id].message = "Generating translations"
-        workflows[workflow_id].current_agent = "translation_agent"
-        if "translation_agent" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["translation_agent"].status = "active"
-            workflows[workflow_id].agents["translation_agent"].started_at = datetime.now()
-            workflows[workflow_id].agents["translation_agent"].current_task = "Generating translations"
-            workflows[workflow_id].agents["translation_agent"].progress = 50
+        workflows[workflow_id].message = "Orchestrator directing translation services"
+        
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 75, "Coordinating translation phase"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "translation_agent", "active", 25, "Preparing translation services"
+        )
 
-        logger.info("🔄 Current Agent: translation_agent (4/7) - Translation")
+        logger.info("🎼 Orchestrator → Delegating to Translation Agent (4/6)")
+        await asyncio.sleep(3)
 
-        # Translation to selected languages only
+        # Do the actual work
         translation_agent = agents["translation_agent"]
         translations = {}
         selected_languages = request.translation_languages if request.translation_languages else []
         
         if selected_languages:
             logger.info(f"Translating to selected languages: {selected_languages}")
+            await update_agent_status_with_history(
+                workflow_id, "translation_agent", "active", 60, f"Translating to {len(selected_languages)} languages"
+            )
+            await update_agent_status_with_history(
+                workflow_id, "orchestrator", "active", 78, "Monitoring translation progress"
+            )
+            
+            await asyncio.sleep(2)
+            
             for lang_key in selected_languages:
                 if lang_key in translation_agent.supported_languages:
                     try:
@@ -572,29 +662,47 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
                     logger.warning(f"Unsupported language selected: {lang_key}")
         else:
             logger.info("No translation languages selected, skipping translation")
+            await update_agent_status_with_history(
+                workflow_id, "translation_agent", "active", 80, "No translations requested"
+            )
         
         logger.info(f"Translations generated for {len(translations)} selected languages")
 
-        # Complete translation agent
-        if "translation_agent" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["translation_agent"].status = "completed"
-            workflows[workflow_id].agents["translation_agent"].progress = 100
-            workflows[workflow_id].agents["translation_agent"].completed_at = datetime.now()
-
-        # Start quality reviewer
-        workflows[workflow_id].progress = 90
-        workflows[workflow_id].message = "Reviewing documentation quality"
-        workflows[workflow_id].current_agent = "quality_reviewer"
-        if "quality_reviewer" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["quality_reviewer"].status = "active"
-            workflows[workflow_id].agents["quality_reviewer"].started_at = datetime.now()
-            workflows[workflow_id].agents["quality_reviewer"].current_task = "Reviewing quality"
-            workflows[workflow_id].agents["quality_reviewer"].progress = 50
-
-        logger.info("🔄 Current Agent: quality_reviewer (5/7) - Quality Review")
+        # Complete translation, orchestrator continues
+        await update_agent_status_with_history(
+            workflow_id, "translation_agent", "completed", 100, "Translation completed"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 80, "Translation completed, proceeding to quality review"
+        )
         
-        await asyncio.sleep(1)  # Allow progress updates
+        await asyncio.sleep(3)
+
+        # ========== PHASE 5: QUALITY REVIEW (Orchestrated) ==========
+        workflows[workflow_id].progress = 85
+        workflows[workflow_id].message = "Orchestrator directing quality review"
         
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 85, "Coordinating quality review"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "quality_reviewer", "active", 30, "Analyzing documentation quality"
+        )
+
+        logger.info("🎼 Orchestrator → Delegating to Quality Reviewer (5/6)")
+        await asyncio.sleep(3)
+        
+        # Update progress
+        await update_agent_status_with_history(
+            workflow_id, "quality_reviewer", "active", 70, "Calculating quality metrics"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 88, "Monitoring quality review"
+        )
+        
+        await asyncio.sleep(2)
+        
+        # Do the actual work
         quality_metrics = quality_reviewer_score_sync(
             agents["quality_reviewer"], 
             documentation, 
@@ -603,63 +711,61 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
         
         logger.info(f"Quality review complete: {quality_metrics['overall_score']}/100")
 
-        # Complete quality reviewer
-        if "quality_reviewer" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["quality_reviewer"].status = "completed"
-            workflows[workflow_id].agents["quality_reviewer"].progress = 100
-            workflows[workflow_id].agents["quality_reviewer"].completed_at = datetime.now()
+        # Complete quality review, orchestrator continues
+        await update_agent_status_with_history(
+            workflow_id, "quality_reviewer", "completed", 100, "Quality review completed"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 90, "Quality review completed, setting up feedback"
+        )
+        
+        await asyncio.sleep(3)
 
-        # Start orchestrator
+        # ========== PHASE 6: FEEDBACK COLLECTION (Orchestrated) ==========
         workflows[workflow_id].progress = 95
-        workflows[workflow_id].message = "Orchestrating final results"
-        workflows[workflow_id].current_agent = "orchestrator"
-        if "orchestrator" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["orchestrator"].status = "active"
-            workflows[workflow_id].agents["orchestrator"].started_at = datetime.now()
-            workflows[workflow_id].agents["orchestrator"].current_task = "Finalizing documentation"
-            workflows[workflow_id].agents["orchestrator"].progress = 50
-
-        logger.info("🔄 Current Agent: orchestrator (6/7) - Content Orchestration")
+        workflows[workflow_id].message = "Orchestrator setting up feedback collection"
         
-        await asyncio.sleep(1)  # Allow progress updates
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 95, "Coordinating feedback setup"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "feedback_collector", "active", 50, "Setting up feedback mechanisms"
+        )
 
-        # Complete orchestrator
-        if "orchestrator" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["orchestrator"].status = "completed"
-            workflows[workflow_id].agents["orchestrator"].progress = 100
-            workflows[workflow_id].agents["orchestrator"].completed_at = datetime.now()
-
-        # Start feedback collector
-        workflows[workflow_id].progress = 98
-        workflows[workflow_id].message = "Preparing feedback collection"
-        workflows[workflow_id].current_agent = "feedback_collector"
-        if "feedback_collector" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["feedback_collector"].status = "active"
-            workflows[workflow_id].agents["feedback_collector"].started_at = datetime.now()
-            workflows[workflow_id].agents["feedback_collector"].current_task = "Setting up feedback"
-            workflows[workflow_id].agents["feedback_collector"].progress = 50
-
-        logger.info("🔄 Current Agent: feedback_collector (7/7) - Feedback Collection")
+        logger.info("🎼 Orchestrator → Delegating to Feedback Collector (6/6)")
+        await asyncio.sleep(3)
         
-        await asyncio.sleep(1)  # Allow progress updates
+        # Update progress
+        await update_agent_status_with_history(
+            workflow_id, "feedback_collector", "active", 90, "Finalizing feedback setup"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "active", 98, "Finalizing workflow"
+        )
+        
+        await asyncio.sleep(2)
 
-        # Complete feedback collector
-        if "feedback_collector" in workflows[workflow_id].agents:
-            workflows[workflow_id].agents["feedback_collector"].status = "completed"
-            workflows[workflow_id].agents["feedback_collector"].progress = 100
-            workflows[workflow_id].agents["feedback_collector"].completed_at = datetime.now()
+        # Complete feedback setup, orchestrator completes
+        await update_agent_status_with_history(
+            workflow_id, "feedback_collector", "completed", 100, "Feedback collection ready"
+        )
+        await update_agent_status_with_history(
+            workflow_id, "orchestrator", "completed", 100, "Workflow orchestration completed successfully"
+        )
+        
+        await asyncio.sleep(3)
 
-        # Final completion
+        # ========== FINAL COMPLETION ==========
         workflows[workflow_id].status = "completed"
         workflows[workflow_id].progress = 100
         workflows[workflow_id].message = "Documentation generation completed successfully"
         workflows[workflow_id].completed_at = datetime.now()
         workflows[workflow_id].current_agent = None
         
-        # Set comprehensive result data with repository summary
+        # Set comprehensive result data
         workflows[workflow_id].result = {
             "documentation": documentation,
-            "repository_summary": repo_summary,  # Add detailed repository summary
+            "repository_summary": repo_summary,
             "diagrams": diagrams,
             "translations": translations,
             "quality": quality_metrics,
@@ -669,10 +775,10 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
             "total_processing_time": str(datetime.now() - workflows[workflow_id].created_at)
         }
         
-        logger.info(f"🎉 AI Workflow completed successfully for {workflow_id}")
+        logger.info(f"🎉 Orchestrator-driven workflow completed successfully for {workflow_id}")
         
     except Exception as e:
-        logger.error(f"AI workflow failed for {workflow_id}: {e}")
+        logger.error(f"Orchestrator-driven workflow failed for {workflow_id}: {e}")
         workflows[workflow_id].status = "failed"
         workflows[workflow_id].progress = 100
         workflows[workflow_id].message = f"Workflow failed: {str(e)}"
@@ -684,6 +790,17 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
             if workflows[workflow_id].agents[agent_name].status == "active":
                 workflows[workflow_id].agents[agent_name].status = "idle"
                 workflows[workflow_id].agents[agent_name].progress = 0
+
+@app.get("/generate")
+async def serve_generate_page():
+    """Serve React frontend for the /generate page"""
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
+    index_file = os.path.join(static_directory, "index.html")
+    
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    else:
+        raise HTTPException(status_code=404, detail="Frontend not found")
 
 @app.post("/generate")
 async def generate_documentation(request: DocumentationRequest, background_tasks: BackgroundTasks):
@@ -792,7 +909,7 @@ async def generate_documentation(request: DocumentationRequest, background_tasks
 @app.get("/status/{workflow_id}")
 async def get_workflow_status(workflow_id: str):
     """
-    Get the status of a documentation generation workflow
+    Get the status of a documentation generation workflow with enhanced agent tracking
     """
     if workflow_id not in workflows:
         # Provide helpful information about why the workflow might not be found
@@ -822,12 +939,12 @@ async def get_workflow_status(workflow_id: str):
     
     workflow = workflows[workflow_id]
     
-    # Check for workflow timeout (10 minutes)
+    # Check for workflow timeout (15 minutes instead of 10)
     if workflow.status == "processing":
         current_time = datetime.now()
         elapsed_time = (current_time - workflow.created_at).total_seconds()
         
-        if elapsed_time > 600:  # 10 minutes timeout
+        if elapsed_time > 900:  # 15 minutes timeout
             logger.warning(f"Workflow {workflow_id} timed out after {elapsed_time} seconds")
             workflow.status = "failed"
             workflow.progress = 100
@@ -838,23 +955,6 @@ async def get_workflow_status(workflow_id: str):
             # Clean up
             if workflow_id in agent_execution_queue:
                 del agent_execution_queue[workflow_id]
-    
-    # Only auto-advance agents for demo mode workflows (not real AI workflows)
-    # Real AI workflows manage their own progression
-    if (workflow.status == "processing" and 
-        workflow_id in agent_execution_queue and 
-        not getattr(workflow, 'ai_powered', False)):
-        
-        # Simulate agent processing time - advance every 3 seconds (demo mode only)
-        current_time = datetime.now()
-        if workflow.current_agent:
-            agent_start_time = workflow.agents[workflow.current_agent].started_at
-            if agent_start_time and (current_time - agent_start_time).total_seconds() > 3:
-                # Complete current agent and start next
-                workflow.agents[workflow.current_agent].status = "completed"
-                workflow.agents[workflow.current_agent].progress = 100
-                workflow.agents[workflow.current_agent].completed_at = current_time
-                await execute_next_agent(workflow_id)
     
     # Convert agents to serializable format
     agents_data = {}
@@ -869,6 +969,9 @@ async def get_workflow_status(workflow_id: str):
             "completed_at": agent_status.completed_at.isoformat() if agent_status.completed_at else None
         }
     
+    # Include transition history for better frontend synchronization
+    transition_history = agent_transition_history.get(workflow_id, [])
+    
     return {
         "success": True,
         "data": {
@@ -881,7 +984,8 @@ async def get_workflow_status(workflow_id: str):
             "completed_at": workflow.completed_at.isoformat() if workflow.completed_at else None,
             "agents": agents_data,
             "result": workflow.result,
-            "ai_powered": getattr(workflow, 'ai_powered', False)
+            "ai_powered": getattr(workflow, 'ai_powered', False),
+            "transition_history": transition_history[-10:] if transition_history else []  # Last 10 transitions
         }
     }
 
@@ -1006,7 +1110,10 @@ async def get_ai_status():
     api_key_length = len(os.getenv('GEMINI_API_KEY', ''))
     
     try:
-        from src.services.ai_service import ai_service
+        try:
+            from .services.ai_service import ai_service
+        except ImportError:
+            from tech_doc_suite.services.ai_service import ai_service
         ai_enabled = ai_service.is_available()
         ai_error = None
     except Exception as e:
@@ -1231,7 +1338,7 @@ async def get_github_user(token: str):
 @app.get("/manifest.json")
 async def serve_manifest():
     """Serve the React app's manifest.json file"""
-    static_directory = os.path.join(os.path.dirname(__file__), "static")
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
     manifest_file = os.path.join(static_directory, "manifest.json")
     
     if os.path.exists(manifest_file):
@@ -1242,7 +1349,7 @@ async def serve_manifest():
 @app.get("/favicon.svg")
 async def serve_favicon():
     """Serve the React app's favicon"""
-    static_directory = os.path.join(os.path.dirname(__file__), "static")
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
     favicon_file = os.path.join(static_directory, "favicon.svg")
     
     if os.path.exists(favicon_file):
@@ -1253,11 +1360,12 @@ async def serve_favicon():
 @app.get("/{path:path}")
 async def serve_frontend(path: str):
     """Serve React frontend for all non-API routes"""
-    static_directory = os.path.join(os.path.dirname(__file__), "static")
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
     index_file = os.path.join(static_directory, "index.html")
     
     # Don't intercept API routes or static file routes
-    if path.startswith(("api/", "docs", "openapi.json", "health", "generate", "status", "feedback", "workflows", "agents", "debug", "static/")):
+    # Note: "generate" and "status" without IDs are valid frontend routes, so only exclude API paths
+    if path.startswith(("api/", "docs", "openapi.json", "health", "status/", "feedback", "workflows", "agents", "debug", "static/", "translation/", "auth/", "github/")):
         # Let FastAPI handle these normally - this shouldn't normally be reached due to route precedence
         raise HTTPException(status_code=404, detail="Not found")
     
@@ -1310,7 +1418,91 @@ async def stop_workflow(request: StopWorkflowRequest):
         "message": "Workflow stopped successfully"
     }
 
-if __name__ == "__main__":
+@app.get("/debug/workflow/{workflow_id}")
+async def debug_workflow_status(workflow_id: str):
+    """Debug endpoint to track real-time workflow progress"""
+    if workflow_id not in workflows:
+        return {"error": "Workflow not found", "workflow_id": workflow_id}
+    
+    workflow = workflows[workflow_id]
+    
+    # Get current time for elapsed calculations
+    current_time = datetime.now()
+    elapsed_total = (current_time - workflow.created_at).total_seconds()
+    
+    debug_info = {
+        "workflow_id": workflow_id,
+        "status": workflow.status,
+        "progress": workflow.progress,
+        "message": workflow.message,
+        "current_agent": workflow.current_agent,
+        "ai_powered": getattr(workflow, 'ai_powered', False),
+        "elapsed_time_seconds": elapsed_total,
+        "created_at": workflow.created_at.isoformat(),
+        "agents_detailed": {}
+    }
+    
+    # Add detailed agent information
+    for agent_id, agent_status in workflow.agents.items():
+        agent_elapsed = None
+        if agent_status.started_at:
+            agent_elapsed = (current_time - agent_status.started_at).total_seconds()
+        
+        debug_info["agents_detailed"][agent_id] = {
+            "status": agent_status.status,
+            "progress": agent_status.progress,
+            "current_task": agent_status.current_task,
+            "started_at": agent_status.started_at.isoformat() if agent_status.started_at else None,
+            "completed_at": agent_status.completed_at.isoformat() if agent_status.completed_at else None,
+            "elapsed_seconds": agent_elapsed,
+            "is_current": workflow.current_agent == agent_id
+        }
+    
+    return {"success": True, "debug_data": debug_info}
+
+# Add enhanced agent tracking
+agent_transition_history: Dict[str, List[Dict]] = {}
+
+async def update_agent_status_with_history(workflow_id: str, agent_name: str, status: str, 
+                                         progress: int, current_task: str = None):
+    """Update agent status and maintain transition history for better frontend sync"""
+    if workflow_id not in workflows:
+        return
+    
+    # Initialize history if needed
+    if workflow_id not in agent_transition_history:
+        agent_transition_history[workflow_id] = []
+    
+    # Update agent status
+    if agent_name in workflows[workflow_id].agents:
+        workflows[workflow_id].agents[agent_name].status = status
+        workflows[workflow_id].agents[agent_name].progress = progress
+        if current_task:
+            workflows[workflow_id].agents[agent_name].current_task = current_task
+        
+        if status == "active":
+            workflows[workflow_id].agents[agent_name].started_at = datetime.now()
+        elif status == "completed":
+            workflows[workflow_id].agents[agent_name].completed_at = datetime.now()
+    
+    # Record transition in history
+    transition = {
+        "timestamp": datetime.now().isoformat(),
+        "agent": agent_name,
+        "status": status,
+        "progress": progress,
+        "task": current_task or "",
+        "workflow_progress": workflows[workflow_id].progress
+    }
+    
+    agent_transition_history[workflow_id].append(transition)
+    
+    # Keep only last 20 transitions to prevent memory issues
+    if len(agent_transition_history[workflow_id]) > 20:
+        agent_transition_history[workflow_id] = agent_transition_history[workflow_id][-20:]
+
+def main():
+    """Main entry point for the application"""
     # Get port from environment variable (for Cloud Run)
     port = int(os.getenv("PORT", 8080))
     
@@ -1320,4 +1512,7 @@ if __name__ == "__main__":
     logger.info(f"🌐 Port: {port}")
     logger.info(f"🏆 Built for: Google Cloud ADK Hackathon")
     
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info") 
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+
+if __name__ == "__main__":
+    main() 

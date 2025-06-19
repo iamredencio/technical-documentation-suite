@@ -1,8 +1,12 @@
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+# C extensions
 *.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -16,7 +20,6 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
@@ -44,6 +47,7 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+cover/
 
 # Translations
 *.mo
@@ -66,6 +70,7 @@ instance/
 docs/_build/
 
 # PyBuilder
+.pybuilder/
 target/
 
 # Jupyter Notebook
@@ -81,7 +86,13 @@ ipython_config.py
 # pipenv
 Pipfile.lock
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+# poetry
+poetry.lock
+
+# pdm
+.pdm.toml
+
+# PEP 582
 __pypackages__/
 
 # Celery stuff
@@ -99,10 +110,6 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # Spyder project settings
 .spyderproject
@@ -122,11 +129,96 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Google Cloud
-gcloud/
-.gcloud/
-service-account-key.json
-*.json
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Node.js (for frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# React build
+frontend/build/
+frontend/dist/
+static/
+
+# Docker
+.dockerignore
 
 # Terraform
 *.tfstate
@@ -134,60 +226,43 @@ service-account-key.json
 .terraform/
 .terraform.lock.hcl
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Logs
-logs/
-*.log
-
-# Coverage reports
-htmlcov/
-.coverage
-
-# Documentation artifacts
-docs/generated/
-docs/output/
-
-# Node.js dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Temporary files
-*.tmp
-*.temp
-temp/
-tmp/
-
-# Local development
-local_repos/
-test_repos/
-clone_*/
-
-# Google Cloud credentials and config
+# Google Cloud
+service-account-key.json
 gcp-credentials.json
-application_default_credentials.json
 
-# Build artifacts
-build/
-dist/
-*.egg-info/
+# Application specific
+app.log
+*.log
+logs/
+tmp/
+temp/
 
-# Documentation build
-docs/_build/
-docs/build/ 
+# Security
+.env.local
+.env.production
+.env.staging
+*.key
+*.pem
+*.crt
+*.cert
+
+# IDE specific
+.project
+.pydevproject
+.settings/
+.metadata
+.recommenders/
+
+# Ruff
+.ruff_cache/
+
+# Coverage
+.coverage.*
+htmlcov/
+
+# Pytest
+.pytest_cache/
+
+# Type checking
+.mypy_cache/
+.pytype/ 

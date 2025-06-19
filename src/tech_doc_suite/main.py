@@ -155,8 +155,64 @@ class TranslationRequest(BaseModel):
 class StopWorkflowRequest(BaseModel):
     workflow_id: str
 
-# In-memory storage for demo (in production, this would be in a database)
-workflows: Dict[str, WorkflowStatus] = {}
+# Persistent storage using local files (survives container restarts)
+STORAGE_DIR = "/tmp/workflow_storage"
+os.makedirs(STORAGE_DIR, exist_ok=True)
+
+def save_workflow(workflow_id: str, workflow_status: WorkflowStatus):
+    """Save workflow to persistent storage"""
+    try:
+        workflow_file = os.path.join(STORAGE_DIR, f"{workflow_id}.json")
+        with open(workflow_file, 'w') as f:
+            # Convert datetime objects to strings for JSON serialization
+            data = workflow_status.dict()
+            if data.get('created_at'):
+                data['created_at'] = data['created_at'].isoformat()
+            if data.get('completed_at'):
+                data['completed_at'] = data['completed_at'].isoformat()
+            json.dump(data, f, indent=2)
+        logger.info(f"💾 Saved workflow {workflow_id} to persistent storage")
+    except Exception as e:
+        logger.error(f"Failed to save workflow {workflow_id}: {e}")
+
+def load_workflow(workflow_id: str) -> Optional[WorkflowStatus]:
+    """Load workflow from persistent storage"""
+    try:
+        workflow_file = os.path.join(STORAGE_DIR, f"{workflow_id}.json")
+        if not os.path.exists(workflow_file):
+            return None
+        
+        with open(workflow_file, 'r') as f:
+            data = json.load(f)
+            
+        # Convert string timestamps back to datetime objects
+        if data.get('created_at'):
+            data['created_at'] = datetime.fromisoformat(data['created_at'])
+        if data.get('completed_at'):
+            data['completed_at'] = datetime.fromisoformat(data['completed_at'])
+            
+        return WorkflowStatus(**data)
+    except Exception as e:
+        logger.error(f"Failed to load workflow {workflow_id}: {e}")
+        return None
+
+def load_all_workflows() -> Dict[str, WorkflowStatus]:
+    """Load all workflows from persistent storage"""
+    workflows = {}
+    try:
+        for filename in os.listdir(STORAGE_DIR):
+            if filename.endswith('.json'):
+                workflow_id = filename[:-5]  # Remove .json extension
+                workflow = load_workflow(workflow_id)
+                if workflow:
+                    workflows[workflow_id] = workflow
+        logger.info(f"📚 Loaded {len(workflows)} workflows from persistent storage")
+    except Exception as e:
+        logger.error(f"Failed to load workflows: {e}")
+    return workflows
+
+# Load existing workflows on startup
+workflows: Dict[str, WorkflowStatus] = load_all_workflows()
 agent_execution_queue: Dict[str, List[str]] = {}  # workflow_id -> list of agent names
 
 # Add enhanced agent tracking
@@ -776,6 +832,8 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
             "total_processing_time": str(datetime.now() - workflows[workflow_id].created_at)
         }
         
+        # Save completed workflow to persistent storage
+        save_workflow(workflow_id, workflows[workflow_id])
         logger.info(f"🎉 Orchestrator-driven workflow completed successfully for {workflow_id}")
         
     except Exception as e:
@@ -791,6 +849,9 @@ async def run_ai_workflow_background(workflow_id: str, request: DocumentationReq
             if workflows[workflow_id].agents[agent_name].status == "active":
                 workflows[workflow_id].agents[agent_name].status = "idle"
                 workflows[workflow_id].agents[agent_name].progress = 0
+        
+        # Save failed workflow to persistent storage
+        save_workflow(workflow_id, workflows[workflow_id])
 
 @app.get("/generate")
 async def serve_generate_page():
@@ -811,7 +872,7 @@ async def generate_documentation(request: DocumentationRequest, background_tasks
     workflow_id = str(uuid.uuid4())
     
     # Initialize workflow_id in workflows dict early to prevent KeyError
-    workflows[workflow_id] = WorkflowStatus(
+    workflow_status = WorkflowStatus(
         workflow_id=workflow_id,
         status="initiated",
         progress=0,
@@ -819,6 +880,8 @@ async def generate_documentation(request: DocumentationRequest, background_tasks
         created_at=datetime.now(),
         agents={}
     )
+    workflows[workflow_id] = workflow_status
+    save_workflow(workflow_id, workflow_status)
     
     # Check if we should use real AI analysis
     use_real_analysis = os.getenv('GEMINI_API_KEY') is not None
@@ -832,6 +895,7 @@ async def generate_documentation(request: DocumentationRequest, background_tasks
         workflows[workflow_id].progress = 5
         workflows[workflow_id].message = "Workflow initialized, starting documentation generation"
         workflows[workflow_id].ai_powered = use_real_analysis
+        save_workflow(workflow_id, workflows[workflow_id])
 
         # Check if we should use real AI analysis
         if use_real_analysis:
@@ -913,30 +977,35 @@ async def get_workflow_status(workflow_id: str):
     Get the status of a documentation generation workflow with enhanced agent tracking
     """
     if workflow_id not in workflows:
-        # Provide helpful information about why the workflow might not be found
-        total_workflows = len(workflows)
-        active_workflows = [wf_id for wf_id, wf in workflows.items() if wf.status == "processing"]
-        
-        error_detail = {
-            "error": "Workflow not found",
-            "workflow_id": workflow_id,
-            "possible_reasons": [
-                "The workflow ID is invalid or expired",
-                "The server was restarted and lost in-memory workflow data",
-                "The workflow was never created successfully"
-            ],
-            "suggestions": [
-                "Create a new workflow using the /generate endpoint",
-                "Check if you have the correct workflow ID"
-            ],
-            "current_system_state": {
-                "total_workflows": total_workflows,
-                "active_workflows": len(active_workflows),
-                "server_uptime_info": "Workflows are stored in memory and are lost on server restart"
+        # Try loading from persistent storage
+        workflow = load_workflow(workflow_id)
+        if workflow:
+            workflows[workflow_id] = workflow
+            logger.info(f"🔄 Loaded workflow {workflow_id} from persistent storage")
+        else:
+            # Provide helpful information about why the workflow might not be found
+            total_workflows = len(workflows)
+            active_workflows = [wf_id for wf_id, wf in workflows.items() if wf.status == "processing"]
+            
+            error_detail = {
+                "error": "Workflow not found",
+                "workflow_id": workflow_id,
+                "possible_reasons": [
+                    "The workflow ID is invalid or expired",
+                    "The workflow was never created successfully"
+                ],
+                "suggestions": [
+                    "Create a new workflow using the /generate endpoint",
+                    "Check if you have the correct workflow ID"
+                ],
+                "current_system_state": {
+                    "total_workflows": total_workflows,
+                    "active_workflows": len(active_workflows),
+                    "server_uptime_info": "Workflows are now persisted across server restarts"
+                }
             }
-        }
-        
-        raise HTTPException(status_code=404, detail=error_detail)
+            
+            raise HTTPException(status_code=404, detail=error_detail)
     
     workflow = workflows[workflow_id]
     
@@ -952,6 +1021,9 @@ async def get_workflow_status(workflow_id: str):
             workflow.message = "Workflow timed out - please try again"
             workflow.completed_at = current_time
             workflow.current_agent = None
+            
+            # Save timed out workflow
+            save_workflow(workflow_id, workflow)
             
             # Clean up
             if workflow_id in agent_execution_queue:
@@ -1339,7 +1411,13 @@ async def get_github_user(token: str):
 async def download_documentation(workflow_id: str, format: str = "markdown"):
     """Download generated documentation in specified format"""
     if workflow_id not in workflows:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        # Try loading from persistent storage
+        workflow = load_workflow(workflow_id)
+        if workflow:
+            workflows[workflow_id] = workflow
+            logger.info(f"🔄 Loaded workflow {workflow_id} from persistent storage for download")
+        else:
+            raise HTTPException(status_code=404, detail="Workflow not found")
     
     workflow = workflows[workflow_id]
     
@@ -1623,6 +1701,9 @@ async def update_agent_status_with_history(workflow_id: str, agent_name: str, st
     # Keep only last 20 transitions to prevent memory issues
     if len(agent_transition_history[workflow_id]) > 20:
         agent_transition_history[workflow_id] = agent_transition_history[workflow_id][-20:]
+    
+    # Save workflow state periodically (every status update)
+    save_workflow(workflow_id, workflows[workflow_id])
 
 def main():
     """Main entry point for the application"""

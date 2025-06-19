@@ -1436,6 +1436,39 @@ async def serve_favicon():
     else:
         raise HTTPException(status_code=404, detail="Favicon not found")
 
+@app.get("/logo192.svg")
+async def serve_logo192():
+    """Serve the React app's logo192.svg"""
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
+    logo_file = os.path.join(static_directory, "logo192.svg")
+    
+    if os.path.exists(logo_file):
+        return FileResponse(logo_file, media_type="image/svg+xml")
+    else:
+        raise HTTPException(status_code=404, detail="Logo not found")
+
+@app.get("/logo512.svg")
+async def serve_logo512():
+    """Serve the React app's logo512.svg"""
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
+    logo_file = os.path.join(static_directory, "logo512.svg")
+    
+    if os.path.exists(logo_file):
+        return FileResponse(logo_file, media_type="image/svg+xml")
+    else:
+        raise HTTPException(status_code=404, detail="Logo not found")
+
+@app.get("/favicon.ico")
+async def serve_favicon_ico():
+    """Serve the React app's favicon.ico"""
+    static_directory = os.path.join(os.path.dirname(__file__), "..", "..", "static")
+    favicon_file = os.path.join(static_directory, "favicon.ico")
+    
+    if os.path.exists(favicon_file):
+        return FileResponse(favicon_file, media_type="image/x-icon")
+    else:
+        raise HTTPException(status_code=404, detail="Favicon ICO not found")
+
 @app.get("/{path:path}")
 async def serve_frontend(path: str):
     """Serve React frontend for all non-API routes"""

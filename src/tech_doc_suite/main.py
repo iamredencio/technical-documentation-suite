@@ -10,7 +10,7 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import uvicorn
@@ -23,6 +23,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import asyncio
+import json
 from contextlib import asynccontextmanager
 
 # Import our agent modules
@@ -1333,6 +1334,84 @@ async def get_github_user(token: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get user info: {str(e)}")
+
+@app.get("/download/{workflow_id}")
+async def download_documentation(workflow_id: str, format: str = "markdown"):
+    """Download generated documentation in specified format"""
+    if workflow_id not in workflows:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    
+    workflow = workflows[workflow_id]
+    
+    if workflow.status != "completed":
+        raise HTTPException(status_code=400, detail="Workflow not completed yet")
+    
+    if not workflow.result or "documentation" not in workflow.result:
+        raise HTTPException(status_code=404, detail="No documentation available for download")
+    
+    documentation = workflow.result["documentation"]
+    project_name = workflow.result.get("repository_summary", {}).get("project_name", "documentation")
+    
+    # Prepare content based on format
+    if format.lower() == "markdown":
+        content = documentation
+        media_type = "text/markdown"
+        filename = f"{project_name}_documentation.md"
+    elif format.lower() == "html":
+        # Convert markdown to HTML (basic conversion)
+        html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{project_name} Documentation</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 20px; }}
+        h1, h2, h3 {{ color: #333; }}
+        code {{ background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }}
+        pre {{ background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }}
+        blockquote {{ border-left: 4px solid #ddd; margin: 0; padding-left: 20px; }}
+    </style>
+</head>
+<body>
+    <div>{documentation.replace(chr(10), '<br>').replace('# ', '<h1>').replace('## ', '<h2>').replace('### ', '<h3>')}</div>
+</body>
+</html>"""
+        content = html_content
+        media_type = "text/html"
+        filename = f"{project_name}_documentation.html"
+    elif format.lower() == "json":
+        # Export as JSON with full workflow data
+        json_data = {
+            "workflow_id": workflow_id,
+            "project_name": project_name,
+            "generated_at": workflow.completed_at.isoformat() if workflow.completed_at else None,
+            "documentation": documentation,
+            "repository_summary": workflow.result.get("repository_summary", {}),
+            "ai_powered": workflow.ai_powered,
+            "metadata": {
+                "total_processing_time": str(workflow.completed_at - workflow.created_at) if workflow.completed_at else None,
+                "workflow_status": workflow.status,
+                "agents_used": list(workflow.agents.keys())
+            }
+        }
+        content = json.dumps(json_data, indent=2)
+        media_type = "application/json"
+        filename = f"{project_name}_documentation.json"
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported format. Use 'markdown', 'html', or 'json'")
+    
+    # Create response with proper headers for download
+    response = Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Type": media_type
+        }
+    )
+    
+    return response
 
 # Catch-all route to serve React app for frontend routes  
 @app.get("/manifest.json")

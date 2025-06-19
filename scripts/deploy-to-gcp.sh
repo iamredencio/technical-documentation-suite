@@ -102,9 +102,9 @@ create_storage_bucket() {
     
     BUCKET_NAME="${PROJECT_ID}-doc-suite-artifacts"
     
-    if ! gsutil ls -b gs://$BUCKET_NAME &> /dev/null; then
-        gsutil mb gs://$BUCKET_NAME
-        gsutil uniformbucketlevelaccess set on gs://$BUCKET_NAME
+    if ! gcloud storage ls gs://$BUCKET_NAME &> /dev/null; then
+        gcloud storage buckets create gs://$BUCKET_NAME --location=US
+        gcloud storage buckets update gs://$BUCKET_NAME --uniform-bucket-level-access
         print_success "Storage bucket created: gs://$BUCKET_NAME"
     else
         print_warning "Storage bucket already exists: gs://$BUCKET_NAME"
@@ -122,7 +122,7 @@ create_bigquery_dataset() {
         print_success "BigQuery dataset created: $DATASET_NAME"
     else
         print_warning "BigQuery dataset already exists: $DATASET_NAME"
-    fi
+    fi 2>/dev/null || print_warning "BigQuery dataset already exists: $DATASET_NAME"
 }
 
 # Set up secrets in Secret Manager

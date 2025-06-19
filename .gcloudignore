@@ -1,3 +1,27 @@
+# Ignore files for Cloud Build to optimize upload speed
+.git
+.gitignore
+README.md
+docs/
+tests/
+scripts/
+*.md
+.env*
+.DS_Store
+node_modules/
+*.log
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+.conda/
+frontend/node_modules/
+frontend/src/
+frontend/public/
+# Keep the built frontend
+!frontend/build/
+
 # Exclude common unwanted files but include frontend
 .git/
 __pycache__/

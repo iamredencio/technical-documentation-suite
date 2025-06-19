@@ -31,6 +31,7 @@ const Status = () => {
   });
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const [currentAgentIndex, setCurrentAgentIndex] = useState(0);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
 
   // Orchestrator-driven architecture: Orchestrator manages all other agents
   const orchestrator = useMemo(() => ({
@@ -119,6 +120,20 @@ const Status = () => {
     fetchStatus();
   }, [fetchStatus]);
 
+  // Close download menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showDownloadMenu && !event.target.closest('.download-menu-container')) {
+        setShowDownloadMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDownloadMenu]);
+
   // Update agent status based on orchestrator-driven architecture
   useEffect(() => {
     if (status?.status === 'processing' && status?.agents) {
@@ -180,6 +195,44 @@ const Status = () => {
     } catch (error) {
       console.error('Error stopping workflow:', error);
       toast.error('Failed to stop workflow');
+    }
+  };
+
+  const downloadFile = async (format) => {
+    try {
+      setShowDownloadMenu(false);
+      const response = await fetch(`${apiService.baseURL}/download/${workflowId}?format=${format}`);
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      
+      // Get filename from Content-Disposition header or create default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `documentation.${format}`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success(`Downloaded ${filename}`);
+    } catch (error) {
+      console.error('Error downloading file:', error);
+      toast.error(`Failed to download ${format} file`);
     }
   };
 
@@ -560,10 +613,39 @@ const Status = () => {
               <FileText className="h-4 w-4 mr-2" />
               View Documentation
             </Link>
-            <button className="btn-outline">
-              <Download className="h-4 w-4 mr-2" />
-              Download Files
-            </button>
+            <div className="relative download-menu-container">
+              <button 
+                onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                className="btn-outline"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Files
+              </button>
+              {showDownloadMenu && (
+                <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                  <div className="py-1">
+                    <button
+                      onClick={() => downloadFile('markdown')}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      📄 Download Markdown (.md)
+                    </button>
+                    <button
+                      onClick={() => downloadFile('html')}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      🌐 Download HTML (.html)
+                    </button>
+                    <button
+                      onClick={() => downloadFile('json')}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      📊 Download JSON (.json)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

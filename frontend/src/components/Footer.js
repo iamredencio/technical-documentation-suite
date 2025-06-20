@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Github, Cloud, Mail, Heart } from 'lucide-react';
+import { Github, Cloud, Mail, Heart, Coffee } from 'lucide-react';
 
 const Footer = () => {
   return (
@@ -14,7 +14,7 @@ const Footer = () => {
               Revolutionary multi-agent system for automated technical documentation generation. 
               Built for the Google Cloud ADK Hackathon 2024.
             </p>
-            <div className="flex space-x-4">
+            <div className="flex space-x-4 mb-6">
               <a
                 href="https://github.com"
                 target="_blank"
@@ -36,6 +36,35 @@ const Footer = () => {
                 className="text-secondary-400 hover:text-white transition-colors"
               >
                 <Mail className="h-5 w-5" />
+              </a>
+              <a
+                href="https://paypal.me/redencio"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-secondary-400 hover:text-yellow-400 transition-colors"
+                title="Buy me a coffee"
+              >
+                <Coffee className="h-5 w-5" />
+              </a>
+            </div>
+            
+            {/* Buy me a coffee section */}
+            <div className="bg-secondary-700 rounded-lg p-4 max-w-md">
+              <div className="flex items-center space-x-3">
+                <Coffee className="h-6 w-6 text-yellow-400" />
+                <div>
+                  <h4 className="text-sm font-medium text-white">Find this useful?</h4>
+                  <p className="text-xs text-secondary-300">Support the development</p>
+                </div>
+              </div>
+              <a
+                href="https://paypal.me/redencio"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center space-x-2 mt-3 px-4 py-2 bg-yellow-500 hover:bg-yellow-400 text-black text-sm font-medium rounded-lg transition-colors duration-200"
+              >
+                <Coffee className="h-4 w-4" />
+                <span>Buy me a coffee</span>
               </a>
             </div>
           </div>
